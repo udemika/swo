@@ -2,12 +2,12 @@
     (function () {
         'use strict';
 
-        var VERSION = '1.6.0';
-        var PLUGIN_NAME = 'Filmix Vision';
+        var VERSION = '1.6.2';
+        var PLUGIN_NAME = 'Filmix Apex';
 
         function startPlugin() {
-            if (window.filmix_vision_loaded) return;
-            window.filmix_vision_loaded = true;
+            if (window.filmix_apex_loaded) return;
+            window.filmix_apex_loaded = true;
 
             var PROXIES = [
                 'https://cors.lampa.stream/',
@@ -20,8 +20,22 @@
             var currentProxyIdx = parseInt(savedIdx);
             if (isNaN(currentProxyIdx) || currentProxyIdx >= PROXIES.length) currentProxyIdx = 0;
 
-            // Стили для списка
-            $('<style>.fx-item-folder { color: #f59e0b !important; } .fx-item-file { color: #fff !important; } .fx-badge { background: #00d2ff; color: #000; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-weight: bold; }</style>').appendTo('head');
+            var loader = {
+                show: function() {
+                    try {
+                        if (Lampa.Loading && typeof Lampa.Loading.show === 'function') Lampa.Loading.show();
+                        else if (Lampa.Loading && typeof Lampa.Loading.start === 'function') Lampa.Loading.start();
+                    } catch(e) {}
+                },
+                hide: function() {
+                    try {
+                        if (Lampa.Loading && typeof Lampa.Loading.hide === 'function') Lampa.Loading.hide();
+                        else if (Lampa.Loading && typeof Lampa.Loading.stop === 'function') Lampa.Loading.stop();
+                    } catch(e) {}
+                }
+            };
+
+            $('<style>.fx-item-folder { color: #f59e0b !important; } .fx-item-file { color: #fff !important; } .fx-badge { background: #00d2ff; color: #000; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; }</style>').appendTo('head');
 
             Lampa.Template.add('fx_nexus_button', '<div class="full-start__button selector view--online fx-ultra-native" data-subtitle="' + PLUGIN_NAME + ' v' + VERSION + '"><span>Онлайн</span></div>');
             Lampa.Template.add('fx_nexus_item', '<div class="online-fx-item selector" style="padding:1.1em; margin:0.4em 0; background:rgba(255,255,255,0.05); border-radius:0.4em; display:flex; justify-content:space-between; align-items:center;">' +
@@ -37,12 +51,13 @@
                 var history = [];
                 var items = [];
                 var active_item = 0;
+                var retry_count = 0;
 
                 this.create = function () {
                     files.appendFiles(scroll.render());
                     scroll.append(container);
                     var startUrl = 'http://showypro.com/lite/fxapi?rjson=False&postid=' + object.movie.id + '&s=1&uid=i8nqb9vw&showy_token=f8377057-90eb-4d76-93c9-7605952a096l';
-                    this.load(startUrl, 'Корень');
+                    this.load(startUrl, object.movie.title || 'Главная');
                     return files.render();
                 };
 
@@ -63,11 +78,11 @@
 
                             if (type === 'file') {
                                 if (jd.quality) {
-                                    if (typeof jd.quality === 'object') badgeText = Object.keys(jd.quality).join(', ');
+                                    if (typeof jd.quality === 'object') badgeText = Object.keys(jd.quality)[0];
                                     else badgeText = jd.quality;
                                 }
                             } else {
-                                badgeText = 'Перейти';
+                                badgeText = 'Папка';
                             }
 
                             found.push({
@@ -86,20 +101,30 @@
                 this.load = function (url, title) {
                     var self = this;
                     var proxyUrl = PROXIES[currentProxyIdx];
-                    Lampa.Loading.show();
+                    loader.show();
 
                     network.native(proxyUrl + url, function (res) {
-                        Lampa.Loading.hide();
+                        loader.hide();
+                        retry_count = 0;
+                        Lampa.Storage.set('fx_ultra_proxy_idx', currentProxyIdx.toString());
                         var list = extractItems(res);
                         if (list.length > 0) {
                             self.build(list, title, url);
                         } else {
-                            self.empty('Тут пока ничего нет');
+                            self.empty('Раздел пуст или не найден');
                         }
                     }, function () {
-                        Lampa.Loading.hide();
-                        self.empty('Ошибка загрузки. Попробуйте другой прокси.');
-                    }, false, { dataType: 'text', timeout: 10000 });
+                        // Ротация прокси при ошибке
+                        retry_count++;
+                        if (retry_count < PROXIES.length) {
+                            currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
+                            self.load(url, title);
+                        } else {
+                            loader.hide();
+                            retry_count = 0;
+                            self.empty('Ошибка сети. Прокси не отвечают.');
+                        }
+                    }, false, { dataType: 'text', timeout: 8000 });
                 };
 
                 this.build = function (list, title, url) {
@@ -108,13 +133,10 @@
                     items = [];
                     active_item = 0;
 
-                    // Заголовок текущей папки
-                    container.append('<div style="padding:10px 15px; background:rgba(255,255,255,0.03); margin-bottom:10px; border-radius:8px; border-left:4px solid #00d2ff;"><span style="opacity:0.6; font-size:12px; text-transform:uppercase; display:block;">Текущий раздел</span><span style="font-weight:bold; color:#fff;">' + title + '</span></div>');
+                    container.append('<div style="padding:10px 15px; background:rgba(255,255,255,0.03); margin-bottom:10px; border-radius:8px; border-left:4px solid #f59e0b;"><span style="opacity:0.6; font-size:12px; text-transform:uppercase; display:block;">Раздел</span><span style="font-weight:bold; color:#fff;">' + title + '</span></div>');
 
-                    // Кнопка Назад
                     if (history.length > 0) {
                         var back = Lampa.Template.get('fx_nexus_item', { name: '.. Назад', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>', badge: '' });
-                        back.addClass('fx-item-folder');
                         back.on('hover:enter', function () {
                             var prev = history.pop();
                             self.load(prev.url, prev.title);
@@ -152,16 +174,16 @@
                             qualities.push({ title: q, url: item.jd.quality[q] });
                         }
                     } else {
-                        qualities.push({ title: 'Default', url: item.url });
+                        qualities.push({ title: 'По умолчанию', url: item.url });
                     }
 
                     Lampa.Select.show({
-                        title: 'Выбор качества: ' + item.name,
+                        title: 'Качество: ' + item.name,
                         items: qualities,
                         onSelect: function (q) {
                             Lampa.Player.play({
                                 url: q.url.replace('http://', 'https://'),
-                                title: (object.movie.title || object.movie.name) + ' - ' + item.name + ' (' + q.title + ')'
+                                title: (object.movie.title || object.movie.name) + ' - ' + item.name + ' [' + q.title + ']'
                             });
                         }
                     });
@@ -169,7 +191,7 @@
 
                 this.empty = function (msg) {
                     container.empty();
-                    var errorBtn = $('<div class="selector" style="padding:2em; text-align:center; color:#00d2ff;">' + msg + '</div>');
+                    var errorBtn = $('<div class="selector" style="padding:2em; text-align:center; color:#f59e0b;">' + msg + ' <br><br><span style="font-size:0.8em; opacity:0.6; background:rgba(255,255,255,0.1); padding:0.5em 1em; border-radius:4px;">Нажмите для возврата</span></div>');
                     errorBtn.on('hover:enter', function () { Lampa.Activity.backward(); });
                     container.append(errorBtn);
                     this.start();
