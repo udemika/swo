@@ -3,10 +3,10 @@
     'use strict';
 
     /**
-     * Filmix Nexus (SWO Edition) v1.9.3
-     * - Динамические фильтры: кнопки "Сезоны", "Качество" или "Переводы" появляются только если они есть в ответе
-     * - Исправлен "белый экран": более надежная инициализация контроллера и обработка ошибок
-     * - Оптимизирован парсинг ответа showypro.com
+     * Filmix Nexus (SWO Edition) v1.9.4
+     * - Полная поддержка HTML/JSON парсинга (data-json)
+     * - Динамические фильтры: скрываются если данных нет в ответе
+     * - Авто-выбор качества из JSON объекта
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -22,27 +22,18 @@
             'https://corsproxy.io/?'
         ];
 
-        var savedIdx = Lampa.Storage.get('fx_nexus_proxy_idx', '0');
-        var currentProxyIdx = parseInt(savedIdx);
+        var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0'));
 
         var safeLoading = {
-            show: function() { 
-                try { if(window.Lampa && Lampa.Loading && typeof Lampa.Loading.show === 'function') Lampa.Loading.show(); } catch(e){} 
-            },
-            hide: function() { 
-                try { if(window.Lampa && Lampa.Loading && typeof Lampa.Loading.hide === 'function') Lampa.Loading.hide(); } catch(e){} 
-            }
+            show: function() { try { if(window.Lampa && Lampa.Loading && Lampa.Loading.show) Lampa.Loading.show(); } catch(e){} },
+            hide: function() { try { if(window.Lampa && Lampa.Loading && Lampa.Loading.hide) Lampa.Loading.hide(); } catch(e){} }
         };
 
         $('<style>\
             .fx-nexus-header { display: flex; align-items: center; gap: 20px; padding: 15px 25px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.05); }\
-            .fx-nexus-label { font-size: 1.2em; color: #fff; opacity: 0.8; font-weight: 300; display: flex; align-items: center; gap: 10px; }\
-            .fx-nexus-pill { background: rgba(255,255,255,0.1); padding: 6px 15px; border-radius: 6px; font-size: 0.9em; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; transition: all 0.2s; }\
+            .fx-nexus-pill { background: rgba(255,255,255,0.1); padding: 6px 15px; border-radius: 6px; font-size: 0.9em; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; }\
             .fx-nexus-pill.focus { background: #fff; color: #000; border-color: #fff; }\
-            .fx-nexus-search-wrap { margin-left: auto; display: flex; align-items: center; gap: 10px; }\
-            .fx-nexus-search-btn { display: flex; align-items: center; justify-content: center; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; }\
-            .fx-nexus-search-btn.focus { background: rgba(255,255,255,0.2); }\
-            .fx-nexus-search-input { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 12px; font-size: 0.9em; color: #fff; width: 220px; }\
+            .fx-nexus-search-input { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 12px; font-size: 0.9em; color: #fff; width: 220px; margin-left: auto; }\
         </style>').appendTo('head');
 
         function FilmixComponent(object) {
@@ -64,35 +55,18 @@
                 voice: 'Любой'
             };
 
-            // Доступные категории фильтров (динамически обновляются из ответа)
-            var available_filter_types = {
-                seasons: false,
-                qualities: false,
-                voices: false
-            };
+            var available_filter_types = { seasons: false, qualities: false, voices: false };
+            var raw_data = []; // Храним распарсенные объекты JSON
 
             this.create = function () {
                 var self = this;
-                var filter_btn_wrap = $('<div class="fx-nexus-label">Фильтр </div>');
-                var filter_label = (object.movie.number_of_seasons || object.movie.first_air_date) ? filters.season : 'Параметры';
-                var filter_btn = $('<span class="fx-nexus-pill selector focusable">' + filter_label + '</span>');
-                filter_btn_wrap.append(filter_btn);
+                var filter_btn = $('<span class="fx-nexus-pill selector focusable">Параметры</span>');
+                var search_label = $('<div class="fx-nexus-search-input">' + (object.movie.title || 'Поиск...') + '</div>');
 
                 filter_btn.on('hover:enter', function() { self.showFilterMenu(); });
 
-                var search_btn = $('<div class="fx-nexus-search-wrap"><div class="fx-nexus-search-btn selector focusable"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg></div><div class="fx-nexus-search-input">' + (object.movie.title || 'Поиск...') + '</div></div>');
-                
-                search_btn.find('.fx-nexus-search-btn').on('hover:enter', function() {
-                    Lampa.Input.edit({ value: object.movie.title, free: true, title: 'Поиск' }, function(new_val) {
-                        if(new_val) {
-                            search_btn.find('.fx-nexus-search-input').text(new_val);
-                            self.loadContent();
-                        }
-                    });
-                });
-
-                header.append(filter_btn_wrap).append(search_btn);
-                header_items = [filter_btn, search_btn.find('.fx-nexus-search-btn')];
+                header.append(filter_btn).append(search_label);
+                header_items = [filter_btn];
 
                 html.append(header).append(scroll.render());
                 scroll.append(container);
@@ -104,23 +78,19 @@
             this.showFilterMenu = function() {
                 var self = this;
                 var menu = [];
-                
                 if (available_filter_types.seasons) menu.push({ title: 'Сезоны', type: 'season' });
                 if (available_filter_types.qualities) menu.push({ title: 'Качество', type: 'quality' });
                 if (available_filter_types.voices) menu.push({ title: 'Переводы', type: 'voice' });
 
-                if (menu.length === 0) {
-                    Lampa.Noty.show('Дополнительные фильтры недоступны');
-                    return;
-                }
+                if (menu.length === 0) return Lampa.Noty.show('Настройки недоступны');
 
                 Lampa.Select.show({
-                    title: 'Параметры просмотра',
+                    title: 'Параметры',
                     items: menu,
                     onSelect: function(item) {
-                        if(item.type === 'season') self.showSubMenu('Выберите сезон', ['1 сезон', '2 сезон', '3 сезон', '4 сезон', '5 сезон', '6 сезон', '7 сезон'], 'season');
-                        if(item.type === 'quality') self.showSubMenu('Качество видео', ['4K', '1080p', '720p', '480p'], 'quality');
-                        if(item.type === 'voice') self.showSubMenu('Выбор озвучки', ['Дубляж', 'LostFilm', 'AlexFilm', 'HDRezka', 'Любой'], 'voice');
+                        if(item.type === 'season') self.showSubMenu('Сезоны', ['1 сезон', '2 сезон', '3 сезон', '4 сезон'], 'season');
+                        if(item.type === 'quality') self.showSubMenu('Качество', ['2160p', '1440p', '1080p', '720p', '480p'], 'quality');
+                        if(item.type === 'voice') self.showSubMenu('Перевод', ['Дубляж', 'Оригинал', 'MVO', 'DVO', 'Любой'], 'voice');
                     },
                     onBack: function() { Lampa.Controller.toggle('fx_nexus_ctrl'); }
                 });
@@ -128,108 +98,104 @@
 
             this.showSubMenu = function(title, options, key) {
                 var self = this;
-                var menu_items = options.map(function(opt) { return { title: opt, value: opt }; });
                 Lampa.Select.show({
                     title: title,
-                    items: menu_items,
+                    items: options.map(function(o){ return {title:o, value:o}; }),
                     onSelect: function(selected) {
                         filters[key] = selected.value;
-                        if(key === 'season') header.find('.fx-nexus-pill').text(selected.value);
-                        self.loadContent();
+                        self.loadContent(); // Перезагружаем или фильтруем на лету
                     },
                     onBack: function() { self.showFilterMenu(); }
                 });
             };
 
             this.loadContent = function() {
-                var s_match = filters.season.match(/\d+/);
-                var s_num = s_match ? s_match[0] : 1;
+                var s_num = (filters.season.match(/\d+/) || [1])[0];
                 var kp_id = object.movie.kinopoisk_id || object.movie.kp_id;
                 var id_param = kp_id ? 'kinopoisk_id=' + kp_id : 'postid=' + object.movie.id;
-                
                 var url = BASE_DOMAIN + '/lite/fxapi?rjson=False&' + id_param + '&s=' + s_num + '&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors';
-                this.load(url, object.movie.title);
+                this.load(url);
             };
 
-            this.load = function (url, title) {
+            this.load = function (url) {
                 var self = this;
-                var finalUrl = PROXIES[currentProxyIdx] + url;
                 safeLoading.show();
-                container.empty();
-                network.native(finalUrl, function (res) {
+                network.native(PROXIES[currentProxyIdx] + url, function (res) {
                     safeLoading.hide();
-                    self.build(res, title);
-                }, function (err) {
+                    self.build(res);
+                }, function () {
                     safeLoading.hide();
-                    self.empty('Ошибка: ' + (err.status || 'Нет данных'));
+                    self.empty('Ошибка загрузки');
                 }, false, { dataType: 'text' });
             };
 
-            this.build = function (res, title) {
+            this.build = function (res) {
                 var self = this;
-                items = [];
                 container.empty();
+                items = [];
+                raw_data = [];
+                
+                // Сброс фильтров
+                available_filter_types = { seasons: false, qualities: false, voices: false };
 
-                var lines = res ? res.split('\n') : [];
-                var found = false;
+                // Парсим HTML
+                var $dom = $('<div>' + res + '</div>');
+                var $items = $dom.find('.videos__item');
 
-                // Сбрасываем доступность фильтров перед парсингом нового ответа
-                available_filter_types.seasons = false;
-                available_filter_types.qualities = false;
-                available_filter_types.voices = false;
+                if ($items.length === 0) return this.empty('Сервер не вернул ссылки');
 
-                lines.forEach(function(line) {
-                    if (line.indexOf('#') > -1) {
-                        var parts = line.split('#');
-                        var name = parts[0].trim();
-                        var link = parts[1] ? parts[1].trim() : '';
+                $items.each(function() {
+                    var $el = $(this);
+                    var jsonStr = $el.attr('data-json');
+                    if (!jsonStr) return;
+
+                    try {
+                        var data = JSON.parse(jsonStr);
+                        raw_data.push(data);
+
+                        // Проверка доступности типов фильтров
+                        if (data.quality) available_filter_types.qualities = true;
+                        if (data.translate || $items.length > 1) available_filter_types.voices = true;
                         
-                        if (name && link) {
-                            found = true;
-                            
-                            // Анализируем содержимое для динамических фильтров
-                            var lowerName = name.toLowerCase();
-                            if (lowerName.indexOf('сезон') > -1 || lowerName.indexOf('season') > -1) available_filter_types.seasons = true;
-                            if (lowerName.indexOf('1080p') > -1 || lowerName.indexOf('720p') > -1 || lowerName.indexOf('4k') > -1) available_filter_types.qualities = true;
-                            // Проверка на популярные студии озвучки
-                            var voiceKeywords = ['lostfilm', 'rezka', 'дубляж', 'coldfilm', 'alexfilm', 'baibako'];
-                            voiceKeywords.forEach(function(kw) {
-                                if (lowerName.indexOf(kw) > -1) available_filter_types.voices = true;
-                            });
+                        var title = data.translate || data.title || 'Видео файл';
+                        if (title.toLowerCase().indexOf('сезон') > -1) available_filter_types.seasons = true;
 
-                            var card = $('<div class="selector focusable" style="padding:15px; margin:5px 25px; background:rgba(255,255,255,0.05); border-radius:8px; display:flex; align-items:center; gap:20px;">' +
-                                '<div style="width:100px; height:60px; background:#222; border-radius:4px; display:flex; align-items:center; justify-content:center; font-weight:bold; color:rgba(255,255,255,0.3)">PLAY</div>' +
-                                '<div style="flex:1;">' +
-                                    '<div style="font-size:1.1em; font-weight:bold;">' + name + '</div>' +
-                                    '<div style="font-size:0.8em; opacity:0.5; margin-top:5px;">' + filters.quality + ' • ' + filters.voice + '</div>' +
-                                '</div>' +
-                            '</div>');
+                        // Создаем карточку
+                        var card = $('<div class="selector focusable" style="padding:15px; margin:5px 25px; background:rgba(255,255,255,0.05); border-radius:8px; display:flex; align-items:center; gap:20px;">' +
+                            '<div style="width:80px; height:50px; background:#e50914; border-radius:4px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:10px;">PLAY</div>' +
+                            '<div style="flex:1;">' +
+                                '<div style="font-size:1.1em; font-weight:bold;">' + title + '</div>' +
+                                '<div style="font-size:0.8em; opacity:0.5; margin-top:5px;">' + (data.maxquality || '') + '</div>' +
+                            '</div>' +
+                        '</div>');
 
-                            card.on('hover:enter', function() {
-                                Lampa.Player.play({ url: link, title: name });
-                            });
+                        card.on('hover:enter', function() {
+                            // Выбираем лучшее качество или то, что в фильтре
+                            var play_url = data.url;
+                            if (data.quality && data.quality[filters.quality]) {
+                                play_url = data.quality[filters.quality];
+                            } else if (data.quality) {
+                                // Если выбранного качества нет, берем первое доступное
+                                var keys = Object.keys(data.quality);
+                                play_url = data.quality[keys[0]];
+                            }
+                            Lampa.Player.play({ url: play_url, title: title });
+                        });
 
-                            container.append(card);
-                            items.push(card);
-                        }
-                    }
+                        container.append(card);
+                        items.push(card);
+                    } catch(e) { console.error('JSON Parse Error', e); }
                 });
 
-                if (!found) {
-                    this.empty('Список пуст или сервер не вернул ссылки');
-                } else {
-                    this.start();
-                }
+                this.start();
             };
 
             this.empty = function(msg) {
-                container.empty();
                 container.append('<div style="padding:50px; text-align:center; opacity:0.5;">' + msg + '</div>');
                 this.start();
             };
 
             this.start = function () {
-                var self = this;
                 Lampa.Controller.add('fx_nexus_ctrl', {
                     toggle: function () {
                         if(current_mode === 'header') {
@@ -237,8 +203,8 @@
                             Lampa.Controller.collectionFocus(header_items[active_header][0], header);
                         } else {
                             Lampa.Controller.collectionSet(container);
-                            var focus_on = items[active_item] ? items[active_item][0] : container.find('.selector')[0];
-                            if (focus_on) Lampa.Controller.collectionFocus(focus_on, container);
+                            var f = items[active_item] ? items[active_item][0] : container.find('.selector')[0];
+                            if(f) Lampa.Controller.collectionFocus(f, container);
                         }
                     },
                     up: function () {
@@ -248,25 +214,8 @@
                         }
                     },
                     down: function () {
-                        if (current_mode === 'header') { 
-                            if (items.length > 0) {
-                                current_mode = 'content'; 
-                                Lampa.Controller.toggle('fx_nexus_ctrl'); 
-                            }
-                        } 
+                        if (current_mode === 'header' && items.length) { current_mode = 'content'; Lampa.Controller.toggle('fx_nexus_ctrl'); } 
                         else if (active_item < items.length - 1) active_item++;
-                    },
-                    right: function() {
-                        if(current_mode === 'header' && active_header < header_items.length - 1) {
-                            active_header++; Lampa.Controller.collectionFocus(header_items[active_header][0], header);
-                        }
-                    },
-                    left: function() {
-                        if(current_mode === 'header' && active_header > 0) {
-                            active_header--; Lampa.Controller.collectionFocus(header_items[active_header][0], header);
-                        } else if(current_mode === 'header' && active_header === 0) {
-                            Lampa.Controller.toggle('head');
-                        }
                     },
                     back: function () { Lampa.Activity.backward(); }
                 });
@@ -274,31 +223,20 @@
             };
 
             this.render = function () { return html; };
-            this.destroy = function () { 
-                if (network) network.clear(); 
-                if (scroll) scroll.destroy(); 
-                html.remove(); 
-                safeLoading.hide(); 
-            };
+            this.destroy = function () { network.clear(); scroll.destroy(); html.remove(); safeLoading.hide(); };
         }
 
         Lampa.Component.add('fx_hybrid_v9', FilmixComponent);
 
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complete' || e.type == 'complite') {
-                try {
-                    var render = e.object.activity.render();
-                    if (render.find('.fx-nexus-native').length) return;
-                    var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Смотреть</span></div>');
-                    btn.on('hover:enter', function () {
-                        Lampa.Activity.push({ component: 'fx_hybrid_v9', movie: e.data.movie });
-                    });
-                    var target = render.find('.view--torrent').length ? render.find('.view--torrent') : render.find('.full-start__buttons');
-                    if (target.length) target.after(btn);
-                    else render.find('.full-start__buttons').append(btn);
-                } catch(err) {
-                    console.error('Filmix Inject Error:', err);
-                }
+                var render = e.object.activity.render();
+                if (render.find('.fx-nexus-native').length) return;
+                var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Смотреть</span></div>');
+                btn.on('hover:enter', function () {
+                    Lampa.Activity.push({ component: 'fx_hybrid_v9', movie: e.data.movie });
+                });
+                render.find('.full-start__buttons').append(btn);
             }
         });
     }
