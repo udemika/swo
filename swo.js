@@ -1,49 +1,12 @@
 (function () {
     'use strict';
 
-    var VERSION = '1.1.9';
+    var VERSION = '1.2.0';
     var PROXY = 'https://api.allorigins.win/get?url=';
     
-    console.log('Filmix Hidden Injector v' + VERSION + ' started');
+    console.log('Filmix Ultra Injector v' + VERSION + ' (Native Style) started');
 
-    // 1. Стили (сделаем кнопку максимально заметной для теста)
-    var style = `
-        <style>
-        .fx-ultra-btn{
-            background: #ff9800 !important;
-            color: #fff !important;
-            padding: 10px 20px;
-            margin: 10px 5px;
-            border-radius: 5px;
-            display: inline-block;
-            cursor: pointer;
-            font-weight: bold;
-            text-transform: uppercase;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-            z-index: 999;
-        }
-        .fx-ultra-btn.focus{
-            background: #fff !important;
-            color: #000 !important;
-            transform: scale(1.05);
-        }
-        .fx-list-item{
-            background: rgba(255,255,255,0.1);
-            margin: 5px 0;
-            padding: 15px;
-            border-radius: 8px;
-            display: flex;
-            justify-content: space-between;
-        }
-        .fx-list-item.focus{
-            background: #fff;
-            color: #000;
-        }
-        </style>
-    `;
-    if (!$('style:contains("fx-ultra-btn")').length) $('body').append(style);
-
-    // 2. Компонент выбора потоков
+    // 1. Компонент выбора потоков (ShowyPro API)
     function FilmixComponent(object) {
         var network = new (Lampa.Request || Lampa.Reguest)();
         var scroll = new Lampa.Scroll({ mask: true, over: true, parent: object.display });
@@ -53,8 +16,8 @@
             var target = 'http://showypro.com/lite/fxapi?rjson=False&postid=' + object.movie.id + '&s=1&uid=i8nqb9vw&showy_token=f8377057-90eb-4d76-93c9-7605952a096l';
             
             Lampa.Select.show({
-                title: 'Filmix Streams',
-                items: [{ title: 'Загрузка...', wait: true }],
+                title: 'Filmix Ultra',
+                items: [{ title: 'Поиск потоков...', wait: true }],
                 onBack: function() { network.clear(); }
             });
 
@@ -74,10 +37,15 @@
 
         this.build = function (data) {
             scroll.clear();
-            var links = (data && data.links) ? data.links : [{name: 'Авто-поток 720p', quality: '720p', url: 'https://showypro.com/get_video?id='+object.movie.id+'&q=720&uid=i8nqb9vw'}];
+            var links = (data && data.links && data.links.length) ? data.links : [{name: 'Авто-поток 720p', quality: '720p', url: 'https://showypro.com/get_video?id='+object.movie.id+'&q=720&uid=i8nqb9vw'}];
             
             links.forEach(function(l) {
-                var item = $(`<div class="fx-list-item selector"><span>${l.name}</span><b>${l.quality}</b></div>`);
+                var item = $(`
+                    <div class="online-fx-v2 selector" style="padding:15px; margin:5px 0; background:rgba(255,255,255,0.05); border-radius:8px; display:flex; justify-content:space-between;">
+                        <span>${l.name}</span>
+                        <b style="background:#ff9800; color:#fff; padding:2px 6px; border-radius:4px; font-size:0.8em;">${l.quality}</b>
+                    </div>
+                `);
                 item.on('hover:enter', function() {
                     Lampa.Player.play({ url: l.url.replace('http://', 'https://'), title: object.movie.title });
                 }).on('hover:focus', function(e) {
@@ -88,73 +56,67 @@
             Lampa.Controller.enable('content');
         };
 
-        this.empty = function () { Lampa.Noty.show('Потоки не найдены'); };
+        this.empty = function () { Lampa.Noty.show('Ничего не найдено'); };
         this.destroy = function () { network.clear(); scroll.destroy(); };
     }
 
+    // Регистрируем компонент внутри Lampa
     Lampa.Component.add('fx_ultra_comp', FilmixComponent);
 
-    // 3. Агрессивная инжекция
-    function injectButton(movieData) {
-        // Удаляем старую кнопку, если она была
-        $('.fx-ultra-btn').remove();
+    // HTML кнопки из вашего примера
+    var buttonHTML = `
+        <div class="full-start__button selector view--online fx-ultra-native" data-subtitle="Ultra v${VERSION}">
+            <svg width="135" height="147" viewBox="0 0 135 147" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M121.5 96.8823C139.5 86.49 139.5 60.5092 121.5 50.1169L41.25 3.78454C23.25 -6.60776 0.750004 6.38265 0.750001 27.1673L0.75 51.9742C4.70314 35.7475 23.6209 26.8138 39.0547 35.7701L94.8534 68.1505C110.252 77.0864 111.909 97.8693 99.8725 109.369L121.5 96.8823Z" fill="currentColor"/>
+                <path d="M63 84.9836C80.3333 94.991 80.3333 120.01 63 130.017L39.75 143.44C22.4167 153.448 0.749999 140.938 0.75 120.924L0.750001 94.0769C0.750002 74.0621 22.4167 61.5528 39.75 71.5602L63 84.9836Z" fill="currentColor"/>
+            </svg>
+            <span>Онлайн</span>
+        </div>
+    `;
 
-        // Ищем куда воткнуть кнопку (от самых приоритетных к самым отчаянным)
-        var selectors = [
-            '.full-start__buttons',
-            '.full-movie__buttons',
-            '.full-movie__actions',
-            '.full-movie__main-info',
-            '.view-movie__buttons',
-            '.full-movie__title', // Если нет блока кнопок, лепим к заголовку
-            '.full-movie__descr'   // Или к описанию
-        ];
+    function injectNative(event) {
+        // Очистка старых инжекций
+        $('.fx-ultra-native').remove();
 
-        var injected = false;
-        for (var i = 0; i < selectors.length; i++) {
-            var container = $(selectors[i]);
+        var movie = event.data.movie;
+        var render = event.object.activity.render();
+        var btn = $(buttonHTML);
+
+        btn.on('hover:enter', function() {
+            Lampa.Component.item('fx_ultra_comp', { 
+                movie: movie, 
+                display: $('body').find('.activity.active') 
+            });
+        });
+
+        // 1. Пытаемся вставить после кнопки торрентов (как в оригинале)
+        var torrentBtn = render.find('.view--torrent');
+        if (torrentBtn.length) {
+            torrentBtn.after(btn);
+            console.log('Filmix Ultra: Injected after Torrent button');
+        } 
+        // 2. Если торрентов нет, ищем любой контейнер кнопок
+        else {
+            var container = render.find('.full-start__buttons, .full-movie__buttons, .buttons-list').first();
             if (container.length) {
-                var btn = $('<div class="fx-ultra-btn selector">Смотреть на Filmix</div>');
-                btn.on('hover:enter', function() {
-                    Lampa.Component.item('fx_ultra_comp', { 
-                        movie: movieData, 
-                        display: $('body').find('.activity.active') 
-                    });
-                });
-                
-                // Если контейнер — это заголовок или описание, добавляем ПОСЛЕ него
-                if (selectors[i].indexOf('title') > -1 || selectors[i].indexOf('descr') > -1) {
-                    container.after(btn);
-                } else {
-                    container.append(btn);
-                }
-                
-                console.log('Filmix Ultra: Injected into ' + selectors[i]);
-                injected = true;
-                break;
+                container.append(btn);
+                console.log('Filmix Ultra: Injected into buttons container');
+            } else {
+                // 3. Совсем отчаянный поиск по DOM (для zrovid)
+                setTimeout(function() {
+                    var bodyBtn = $('.full-start__buttons, .full-movie__buttons').first();
+                    if (bodyBtn.length && !bodyBtn.find('.fx-ultra-native').length) {
+                        bodyBtn.append(btn);
+                    }
+                }, 1000);
             }
         }
-        return injected;
     }
 
-    // Слушатель открытия карточки
+    // Подписываемся на событие открытия карточки
     Lampa.Listener.follow('full', function (e) {
         if (e.type == 'complete' || e.type == 'complite') {
-            console.log('Filmix Ultra: Card opened, starting injection...');
-            
-            // Пробуем инжектить сразу
-            setTimeout(function() {
-                if (!injectButton(e.data.movie)) {
-                    // Если не вышло, пробуем еще несколько раз с интервалом
-                    var attempts = 0;
-                    var timer = setInterval(function() {
-                        attempts++;
-                        if (injectButton(e.data.movie) || attempts > 10) {
-                            clearInterval(timer);
-                        }
-                    }, 1000);
-                }
-            }, 500);
+            injectNative(e);
         }
     });
 
