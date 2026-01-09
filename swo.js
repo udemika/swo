@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    var VERSION = '1.2.9';
+    var VERSION = '1.3.0';
     var PROXIES = [
         'https://cors.lampa.stream/',
         'https://cors.kp556.workers.dev:8443/',
@@ -33,7 +33,6 @@
             var found = [];
             if (!res) return found;
 
-            // 1. Попытка парсинга как JSON
             try {
                 var json = typeof res === 'string' ? JSON.parse(res) : res;
                 if (json.contents) json = JSON.parse(json.contents);
@@ -41,12 +40,10 @@
                 if (json.url) return [{name: 'Основной поток', url: json.url, quality: '720p'}];
             } catch(e) {}
 
-            // 2. Попытка парсинга как HTML (ваш случай с videos__line)
             var wrapper = $('<div>').append(res);
             wrapper.find('[data-json]').each(function() {
                 try {
                     var jd = JSON.parse($(this).attr('data-json'));
-                    // Извлекаем только прямые ссылки на видео (method: play)
                     if (jd.method === 'play' && jd.url) {
                         var name = $(this).find('.videos__item-title').text() || jd.title || 'Видео файл';
                         var quality = 'Auto';
@@ -221,3 +218,5 @@
         if (e.type == 'complete' || e.type == 'complite') injectButton(e);
     });
 })();
+/* === КОНЕЦ ФАЙЛА FILMIX ULTRA === */
+/* === ЛЮБОЙ ТЕКСТ НИЖЕ ЭТОЙ СТРОКИ ДОЛЖЕН БЫТЬ УДАЛЕН === */
