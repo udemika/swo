@@ -9,12 +9,9 @@
         'https://corsproxy.io/?'
     ];
     
-    // Пытаемся восстановить последний рабочий прокси из памяти
     var savedIdx = Lampa.Storage.get('fx_ultra_proxy_idx', '0');
     var currentProxyIdx = parseInt(savedIdx);
-    if (currentProxyIdx >= PROXIES.length) currentProxyIdx = 0;
-
-    console.log('Filmix Ultra v' + VERSION + ' - Proxy Persistence Active');
+    if (isNaN(currentProxyIdx) || currentProxyIdx >= PROXIES.length) currentProxyIdx = 0;
 
     function FilmixComponent(object) {
         var network = new (Lampa.Request || Lampa.Reguest)();
@@ -26,7 +23,6 @@
         var attempts = 0;
 
         this.create = function () {
-            var self = this;
             files.appendFiles(scroll.render());
             scroll.append(container);
             this.load();
@@ -37,9 +33,7 @@
             if (typeof str === 'object') return str;
             if (!str || typeof str !== 'string') return null;
             try {
-                // Если ответ выглядит как HTML (начинается с <), это ошибка прокси
                 if (str.trim().indexOf('<') === 0) return null;
-                
                 var clean = str.replace(/^\ufeff/g, '').trim();
                 return JSON.parse(clean);
             } catch(e) {
@@ -50,14 +44,13 @@
         this.load = function() {
             var self = this;
             var targetUrl = 'http://showypro.com/lite/fxapi?rjson=False&postid=' + object.movie.id + '&s=1&uid=i8nqb9vw&showy_token=f8377057-90eb-4d76-93c9-7605952a096l';
-            
             var proxyUrl = PROXIES[currentProxyIdx];
             var displayProxy = proxyUrl.split('/')[2] || 'proxy';
 
             if (Lampa.Select) {
                 Lampa.Select.show({
                     title: 'Filmix Ultra v' + VERSION,
-                    items: [{ title: 'Запрос через: ' + displayProxy, wait: true }],
+                    items: [{ title: 'Подключение: ' + displayProxy, wait: true }],
                     onBack: function() { 
                         network.clear(); 
                         Lampa.Activity.backward();
@@ -71,28 +64,27 @@
 
                 if (data && (data.links || data.url)) {
                     if (Lampa.Select) Lampa.Select.close();
-                    // Сохраняем успешный прокси
                     Lampa.Storage.set('fx_ultra_proxy_idx', currentProxyIdx.toString());
                     self.build(data);
                 } else {
-                    self.retryOrError('Неверный формат');
+                    self.retryOrError();
                 }
-            }, function (err) {
-                self.retryOrError('Таймаут/Ошибка');
+            }, function () {
+                self.retryOrError();
             }, false, { 
                 dataType: 'text',
-                timeout: 8000 // 8 секунд на попытку
+                timeout: 8000
             });
         };
 
-        this.retryOrError = function(msg) {
+        this.retryOrError = function() {
             attempts++;
             if (attempts < PROXIES.length) {
                 currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
                 this.load();
             } else {
                 if (Lampa.Select) Lampa.Select.close();
-                this.empty('Все прокси недоступны. Проверьте подключение.');
+                this.empty('Сервер Filmix временно недоступен или прокси заблокированы.');
             }
         };
 
@@ -103,10 +95,10 @@
             
             var links = (data.links && data.links.length) ? data.links : [];
             if (links.length === 0 && data.url) {
-                links.push({name: 'Поток Filmix', quality: '720p', url: data.url});
+                links.push({name: 'Основной поток', quality: '720p', url: data.url});
             }
             
-            if (links.length === 0) return this.empty('Видео не найдено в базе');
+            if (links.length === 0) return this.empty('Видео не найдено');
 
             links.forEach(function(l, i) {
                 var item = $(`
@@ -135,7 +127,7 @@
 
         this.empty = function (msg) { 
             container.empty();
-            var errorBtn = $(`<div class="selector" style="padding:2em; text-align:center; color:#ff9800;">${msg}<br><br><small style="color:#fff; opacity:0.3">OK - Вернуться</small></div>`);
+            var errorBtn = $(`<div class="selector" style="padding:2em; text-align:center; color:#ff9800;">${msg}<br><br><small style="color:#fff; opacity:0.3">Нажмите OK чтобы выйти</small></div>`);
             errorBtn.on('hover:enter', function() { Lampa.Activity.backward(); });
             container.append(errorBtn);
             this.start();
