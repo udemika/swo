@@ -2,16 +2,17 @@
     (function () {
         'use strict';
 
-        var VERSION = '1.6.9';
-        var PLUGIN_NAME = 'Filmix Interceptor';
+        var VERSION = '1.7.0';
+        var PLUGIN_NAME = 'Filmix Nexus';
 
         function startPlugin() {
-            if (window.filmix_interceptor_loaded) return;
-            window.filmix_interceptor_loaded = true;
+            if (window.filmix_nexus_loaded) return;
+            window.filmix_nexus_loaded = true;
 
             // Проверенные данные сессии
             var WORKING_UID = 'i8nqb9vw';
             var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
+            var BASE_DOMAIN = 'http://showypro.com';
 
             var PROXIES = [
                 'https://cors.byskaz.ru/',
@@ -21,7 +22,7 @@
                 'https://api.allorigins.win/raw?url='
             ];
 
-            var savedIdx = Lampa.Storage.get('fx_interceptor_proxy_idx', '0');
+            var savedIdx = Lampa.Storage.get('fx_nexus_proxy_idx', '0');
             var currentProxyIdx = parseInt(savedIdx);
             if (isNaN(currentProxyIdx) || currentProxyIdx >= PROXIES.length) currentProxyIdx = 0;
 
@@ -40,9 +41,9 @@
                 }
             };
 
-            $('<style>.fx-badge { background: #f43f5e; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; } .fx-interceptor-status { padding: 8px 12px; background: rgba(244, 63, 94, 0.1); border-left: 3px solid #f43f5e; margin-bottom: 10px; border-radius: 4px; }</style>').appendTo('head');
+            $('<style>.fx-badge { background: #3b82f6; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; } .fx-nexus-status { padding: 8px 12px; background: rgba(59, 130, 246, 0.1); border-left: 3px solid #3b82f6; margin-bottom: 10px; border-radius: 4px; }</style>').appendTo('head');
 
-            Lampa.Template.add('fx_nexus_button', '<div class="full-start__button selector view--online fx-interceptor-native" data-subtitle="' + PLUGIN_NAME + ' v' + VERSION + '"><span>Онлайн</span></div>');
+            Lampa.Template.add('fx_nexus_button', '<div class="full-start__button selector view--online fx-nexus-native" data-subtitle="' + PLUGIN_NAME + ' v' + VERSION + '"><span>Онлайн</span></div>');
             Lampa.Template.add('fx_nexus_item', '<div class="online-fx-item selector" style="padding:1.1em; margin:0.4em 0; background:rgba(255,255,255,0.05); border-radius:0.4em; display:flex; justify-content:space-between; align-items:center;">' +
                 '<div style="display:flex; align-items:center; gap:12px;">{icon}<span style="font-size:1.1em;">{name}</span></div>' +
                 '<div style="display:flex; gap:8px; align-items:center;">{badge}</div>' +
@@ -52,7 +53,7 @@
                 var network = new (Lampa.Request || Lampa.Reguest)();
                 var scroll = new Lampa.Scroll({ mask: true, over: true });
                 var files = new Lampa.Explorer(object);
-                var container = $('<div class="fx-interceptor-list" style="padding-bottom: 50px;"></div>');
+                var container = $('<div class="fx-nexus-list" style="padding-bottom: 50px;"></div>');
                 var history = [];
                 var items = [];
                 var active_item = 0;
@@ -62,13 +63,10 @@
                     files.appendFiles(scroll.render());
                     scroll.append(container);
                     
-                    // Перехват ID: приоритет Kinopoisk ID
                     var kp_id = object.movie.kinopoisk_id || object.movie.kp_id;
                     var id_param = kp_id ? 'kinopoisk_id=' + kp_id : 'postid=' + object.movie.id;
                     
-                    console.log('Filmix Interceptor', 'Target ID: ' + id_param);
-
-                    var startUrl = 'http://showypro.com/lite/fxapi?rjson=False&' + id_param + '&s=1&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors';
+                    var startUrl = BASE_DOMAIN + '/lite/fxapi?rjson=False&' + id_param + '&s=1&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors';
                     this.load(startUrl, object.movie.title || 'Главная');
                     return files.render();
                 };
@@ -83,9 +81,12 @@
                                 var jd = JSON.parse($(this).attr('data-json'));
                                 var name = $(this).find('.videos__item-title').text() || $(this).text() || jd.title || 'Элемент';
                                 name = name.trim();
-                                var type = (jd.method === 'play') ? 'file' : 'folder';
+                                if (!name && jd.title) name = jd.title;
+                                
+                                var type = (jd.method === 'play' || (jd.url && jd.url.indexOf('.mp4') !== -1) || (jd.url && jd.url.indexOf('.m3u8') !== -1)) ? 'file' : 'folder';
                                 var badgeText = '';
-                                var icon = type === 'folder' ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="#f59e0b"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="#f43f5e"><path d="M8 5v14l11-7z"/></svg>';
+                                var iconColor = type === 'folder' ? '#f59e0b' : '#3b82f6';
+                                var icon = type === 'folder' ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="'+iconColor+'"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="'+iconColor+'"><path d="M8 5v14l11-7z"/></svg>';
 
                                 if (type === 'file') {
                                     if (jd.quality) {
@@ -103,24 +104,34 @@
 
                 this.load = function (url, title) {
                     var self = this;
+                    
+                    // Резолвер путей для папок (Критический фикс v1.7.0)
+                    if (url.indexOf('http') !== 0) {
+                        url = BASE_DOMAIN + (url.indexOf('/') === 0 ? '' : '/') + url;
+                    }
+
+                    // Инъекция токенов, если их нет в ссылке папки
+                    if (url.indexOf('showy_token') === -1) {
+                        url += (url.indexOf('?') === -1 ? '?' : '&') + 'uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors';
+                    }
+
                     var proxyUrl = PROXIES[currentProxyIdx];
                     var finalUrl = proxyUrl + url;
-                    
                     if (proxyUrl.includes('allorigins')) finalUrl = proxyUrl + encodeURIComponent(url);
 
                     loader.show();
-                    console.log('Filmix Interceptor', 'Proxy ' + currentProxyIdx + ': ' + proxyUrl);
+                    console.log('Filmix Nexus', 'Loading: ' + url + ' via ' + proxyUrl);
 
                     network.native(finalUrl, function (res) {
                         loader.hide();
                         retry_count = 0;
-                        Lampa.Storage.set('fx_interceptor_proxy_idx', currentProxyIdx.toString());
+                        Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx.toString());
                         
                         var list = extractItems(res);
                         if (list.length > 0) self.build(list, title, url);
-                        else self.empty('Сервер вернул пустой список. Возможно, контент удален или недоступен для KP-ID.');
+                        else self.empty('Сервер не вернул данных. Попробуйте обновить страницу или выбрать другой прокси в настройках.');
                     }, function (err) {
-                        console.log('Filmix Interceptor', 'Node ' + currentProxyIdx + ' failed. Code: ' + err.status);
+                        console.log('Filmix Nexus', 'Error Node ' + currentProxyIdx + ' Code: ' + err.status);
                         retry_count++;
                         if (retry_count < PROXIES.length) {
                             currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
@@ -128,9 +139,9 @@
                         } else {
                             loader.hide();
                             retry_count = 0;
-                            self.empty('Ошибка 503/CORS: Все прокси-узлы отклонили запрос. Проверьте Kinopoisk ID в карточке фильма.');
+                            self.empty('Ошибка 503: Источник Filmix временно недоступен или заблокировал все прокси-узлы.');
                         }
-                    }, false, { dataType: 'text', timeout: 10000 });
+                    }, false, { dataType: 'text', timeout: 12000 });
                 };
 
                 this.build = function (list, title, url) {
@@ -139,8 +150,8 @@
                     items = [];
                     active_item = 0;
 
-                    var info = $('<div class="fx-interceptor-status">' +
-                        '<div style="font-size:10px; opacity:0.6; text-transform:uppercase;">Protocol: KP-ID Interceptor</div>' +
+                    var info = $('<div class="fx-nexus-status">' +
+                        '<div style="font-size:10px; opacity:0.6; text-transform:uppercase;">Nexus Path Resolver Active</div>' +
                         '<div style="font-weight:bold; margin-top:2px;">' + title + '</div>' +
                     '</div>');
                     container.append(info);
@@ -176,10 +187,10 @@
                     var qualities = [];
                     if (item.jd.quality && typeof item.jd.quality === 'object') {
                         for (var q in item.jd.quality) qualities.push({ title: q, url: item.jd.quality[q] });
-                    } else qualities.push({ title: 'Stream', url: item.url });
+                    } else qualities.push({ title: 'Продолжить', url: item.url });
 
                     Lampa.Select.show({
-                        title: 'Выбор потока',
+                        title: item.name,
                         items: qualities,
                         onSelect: function (q) {
                             Lampa.Player.play({
@@ -192,9 +203,9 @@
 
                 this.empty = function (msg) {
                     container.empty();
-                    var err = $('<div class="selector" style="padding:40px; text-align:center; background:rgba(255,255,255,0.03); border-radius:15px; border:1px solid rgba(244, 63, 94, 0.2); margin:10px;">' +
-                        '<div style="color:#f43f5e; font-weight:bold; margin-bottom:10px;">INTERCEPTOR ALERT</div>' +
-                        '<div style="font-size:0.9em; opacity:0.8;">' + msg + '</div>' +
+                    var err = $('<div class="selector" style="padding:40px; text-align:center; background:rgba(255,255,255,0.03); border-radius:15px; border:1px solid rgba(59, 130, 246, 0.2); margin:10px;">' +
+                        '<div style="color:#3b82f6; font-weight:bold; margin-bottom:10px;">NEXUS SYSTEM ERROR</div>' +
+                        '<div style="font-size:0.9em; opacity:0.8; line-height:1.4;">' + msg + '</div>' +
                     '</div>');
                     err.on('hover:enter', function () { Lampa.Activity.backward(); });
                     container.append(err);
@@ -202,7 +213,7 @@
                 };
 
                 this.start = function () {
-                    Lampa.Controller.add('fx_interceptor_ctrl', {
+                    Lampa.Controller.add('fx_nexus_ctrl', {
                         toggle: function () {
                             Lampa.Controller.collectionSet(container);
                             Lampa.Controller.collectionFocus(items[active_item] ? items[active_item][0] : container.find('.selector')[0], container);
@@ -214,7 +225,7 @@
                             else Lampa.Activity.backward(); 
                         }.bind(this)
                     });
-                    Lampa.Controller.enable('fx_interceptor_ctrl');
+                    Lampa.Controller.enable('fx_nexus_ctrl');
                 };
 
                 this.render = function () { return files.render(); };
@@ -226,7 +237,7 @@
             Lampa.Component.add('fx_hybrid_v9', FilmixComponent);
 
             function injectButton(render, movie) {
-                if (render.find('.fx-interceptor-native').length) return;
+                if (render.find('.fx-nexus-native').length) return;
                 var btn = Lampa.Template.get('fx_nexus_button');
                 btn.on('hover:enter', function () {
                     Lampa.Activity.push({ url: '', title: PLUGIN_NAME, component: 'fx_hybrid_v9', movie: movie, page: 1 });
