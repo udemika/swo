@@ -3,11 +3,11 @@
     'use strict';
 
     /**
-     * Filmix Nexus (Ultimate) v1.9.8
-     * - Исправлена ошибка component.pause (белый экран при выходе)
-     * - Кнопка "Перевод" появляется только при наличии выбора
-     * - Фильтрация списка по выбранному переводу
-     * - Сезоны только для сериалов, кол-во из метаданных
+     * Filmix Nexus (Full-Series Support) v2.0.0
+     * - Исправлена работа с сериалами (детекция сезонов)
+     * - Сброс озвучки при смене сезона (чтобы не было пустых списков)
+     * - Стабильное появление кнопки перевода
+     * - Полное устранение ошибки component.pause
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -31,18 +31,18 @@
         };
 
         $('<style>\
-            .fx-nexus-header { display: flex; align-items: center; gap: 15px; padding: 15px 25px; background: rgba(0,0,0,0.4); border-bottom: 1px solid rgba(255,255,255,0.05); }\
-            .fx-nexus-pill { background: rgba(255,255,255,0.08); padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; color: #ccc; transition: all 0.2s; }\
-            .fx-nexus-pill.focus { background: #fff; color: #000; border-color: #fff; transform: scale(1.03); }\
-            .fx-nexus-search-input { background: rgba(255,255,255,0.03); border-radius: 6px; padding: 6px 12px; font-size: 0.85em; color: rgba(255,255,255,0.4); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }\
-            .fx-card-play { width: 42px; height: 42px; background: #e50914; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }\
+            .fx-nexus-header { display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: rgba(0,0,0,0.6); border-bottom: 1px solid rgba(255,255,255,0.05); }\
+            .fx-nexus-pill { background: rgba(255,255,255,0.08); padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; color: #fff; transition: all 0.2s; white-space: nowrap; }\
+            .fx-nexus-pill.focus { background: #fff; color: #000; border-color: #fff; transform: scale(1.02); }\
+            .fx-nexus-title { font-size: 0.8em; color: rgba(255,255,255,0.3); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px; }\
+            .fx-card-play { width: 38px; height: 38px; background: #e50914; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }\
         </style>').appendTo('head');
 
         function FilmixComponent(object) {
             var network = new (Lampa.Request || Lampa.Reguest)();
             var scroll = new Lampa.Scroll({ mask: true, over: true });
             var html = $('<div class="fx-nexus-component"></div>');
-            var container = $('<div class="fx-nexus-list" style="padding-bottom: 60px;"></div>');
+            var container = $('<div class="fx-nexus-list" style="padding-bottom: 80px;"></div>');
             var header = $('<div class="fx-nexus-header"></div>');
             
             var items = [];
@@ -56,10 +56,10 @@
             };
 
             var raw_data = [];
-            var total_seasons = object.movie.number_of_seasons || 0;
+            // Улучшенная детекция количества сезонов для сериалов
+            var total_seasons = object.movie.number_of_seasons || (object.movie.seasons ? object.movie.seasons.length : 0);
 
             this.create = function () {
-                var self = this;
                 html.append(header).append(scroll.render());
                 scroll.append(container);
                 this.loadContent();
@@ -71,7 +71,7 @@
                 header.empty();
                 header_items = [];
 
-                // Кнопка сезонов (только для сериалов)
+                // Кнопка сезонов
                 if (total_seasons > 0) {
                     var s_btn = $('<div class="fx-nexus-pill selector focusable">' + filters.season + '</div>');
                     s_btn.on('hover:enter', function() { self.showSeasonMenu(); });
@@ -79,22 +79,25 @@
                     header_items.push(s_btn);
                 }
 
-                // Кнопка озвучки (только если их > 1)
+                // Кнопка озвучки
                 var voices = this.getUniqueVoices();
-                if (voices.length > 2) { // "Любой" + еще минимум 2
+                if (voices.length > 1) { 
                     var v_btn = $('<div class="fx-nexus-pill selector focusable">Перевод: ' + filters.voice + '</div>');
                     v_btn.on('hover:enter', function() { self.showVoiceMenu(voices); });
                     header.append(v_btn);
                     header_items.push(v_btn);
                 }
 
-                header.append('<div class="fx-nexus-search-input">' + (object.movie.title || object.movie.name) + '</div>');
+                header.append('<div class="fx-nexus-title">' + (object.movie.title || object.movie.name) + '</div>');
             };
 
             this.getUniqueVoices = function() {
                 var v = ['Любой'];
                 raw_data.forEach(function(d) {
-                    if (d.translate && v.indexOf(d.translate) === -1) v.push(d.translate);
+                    if (d.translate) {
+                        var name = d.translate.trim();
+                        if (name && v.indexOf(name) === -1) v.push(name);
+                    }
                 });
                 return v;
             };
@@ -106,10 +109,11 @@
                     menu.push({ title: i + ' сезон', value: i });
                 }
                 Lampa.Select.show({
-                    title: 'Выберите сезон',
+                    title: 'Выбор сезона',
                     items: menu,
                     onSelect: function(item) {
                         filters.season = item.title;
+                        filters.voice = 'Любой'; // Сбрасываем озвучку при смене сезона
                         self.loadContent();
                     },
                     onBack: function() { Lampa.Controller.toggle('fx_nexus_ctrl'); }
@@ -119,7 +123,7 @@
             this.showVoiceMenu = function(voices) {
                 var self = this;
                 Lampa.Select.show({
-                    title: 'Выберите перевод',
+                    title: 'Выбор озвучки',
                     items: voices.map(function(v){ return {title: v, value: v}; }),
                     onSelect: function(item) {
                         filters.voice = item.value;
@@ -142,7 +146,7 @@
                     self.parseData(res);
                 }, function () {
                     safeLoading.hide();
-                    self.empty('Ошибка связи с сервером');
+                    self.empty('Ошибка загрузки. Попробуйте другой прокси в настройках.');
                 }, false, { dataType: 'text' });
             };
 
@@ -157,7 +161,7 @@
                     } catch(e) {}
                 });
                 
-                if (raw_data.length === 0) return this.empty('Видео не найдено');
+                if (raw_data.length === 0) return this.empty('Ссылки на видео не найдены');
                 this.renderList();
             };
 
@@ -170,15 +174,14 @@
                 this.updateHeader();
 
                 raw_data.forEach(function(data) {
-                    // Фильтрация по озвучке
-                    if (filters.voice !== 'Любой' && data.translate !== filters.voice) return;
+                    if (filters.voice !== 'Любой' && data.translate.trim() !== filters.voice) return;
 
-                    var title = data.translate || 'Стандартный поток';
+                    var title = data.translate || 'Видео файл';
                     var card = $('<div class="selector focusable" style="padding:15px; margin:6px 20px; background:rgba(255,255,255,0.05); border-radius:10px; display:flex; align-items:center; gap:15px; border:1px solid rgba(255,255,255,0.02);">\
-                        <div class="fx-card-play"><svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>\
+                        <div class="fx-card-play"><svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>\
                         <div style="flex:1; overflow:hidden;">\
                             <div style="font-size:15px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + title + '</div>\
-                            <div style="font-size:11px; opacity:0.4; margin-top:2px;">' + (data.maxquality || 'Full HD') + '</div>\
+                            <div style="font-size:11px; opacity:0.4; margin-top:3px;">' + (data.maxquality || 'HD') + '</div>\
                         </div>\
                     </div>');
 
@@ -190,7 +193,7 @@
                     items.push(card);
                 });
 
-                if (items.length === 0) container.append('<div style="padding:50px; text-align:center; opacity:0.3;">Нет видео с таким переводом</div>');
+                if (items.length === 0) container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Нет ссылок для выбранных фильтров</div>');
                 this.start();
             };
 
