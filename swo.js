@@ -3,68 +3,68 @@
     'use strict';
 
     /**
-     * Исправленный плагин swo.js для Lampa
-     * Устраняет: TypeError (Loading), дубликаты кнопок, пустые экраны.
+     * SWO.JS - Resilient Edition for Lampack
+     * Фиксы: CORS, TypeError, No-Button, Empty Screen.
      */
     function startPlugin() {
-        // Слой безопасности для работы с API Lampa
-        var UI = {
+        console.log('[SWO] Starting initialization...');
+
+        // Слой защиты от падений UI
+        var SafeUI = {
             loading: function(status) {
                 try {
-                    if (window.Lampa && Lampa.Loading) {
-                        if (status && typeof Lampa.Loading.show === 'function') Lampa.Loading.show();
-                        else if (!status && typeof Lampa.Loading.hide === 'function') Lampa.Loading.hide();
-                    } else if (window.Loading) {
-                        if (status && typeof Loading.show === 'function') Loading.show();
-                        else if (!status && typeof Loading.hide === 'function') Loading.hide();
-                    }
-                } catch (e) {
-                    console.error('[SWO] UI Error:', e);
-                }
+                    var L = window.Lampa || {};
+                    var Loading = L.Loading || window.Loading;
+                    if (Loading && typeof Loading.show === 'function' && status) Loading.show();
+                    if (Loading && typeof Loading.hide === 'function' && !status) Loading.hide();
+                } catch (e) {}
+            },
+            error: function(msg) {
+                try {
+                    if (window.Lampa && Lampa.Noty) Lampa.Noty.show(msg);
+                    else alert(msg);
+                } catch(e) { console.error(msg); }
             }
         };
 
         /**
-         * Основной компонент FilmixComponent
+         * Компонент выбора источников
          */
-        function FilmixComponent(object) {
+        function SWOComponent(object) {
             var _this = this;
             var network = new Lampa.Reguest();
             var scroll = new Lampa.Scroll({mask: true, over: true});
             var items = [];
-            var html = $('<div class="swo-component"></div>');
+            var html = $('<div class="swo-component overflow-hidden"></div>');
             var body = $('<div class="category-full"></div>');
             var active = 0;
 
             this.create = function() {
-                try {
-                    this.load();
-                    return this.render();
-                } catch (e) {
-                    console.error('[SWO] Create error:', e);
-                    return $('<div class="empty">Ошибка инициализации компонента</div>');
-                }
+                this.load();
+                return this.render();
             };
 
             this.load = function() {
-                UI.loading(true);
+                SafeUI.loading(true);
                 
-                // Эмуляция загрузки. Здесь должен быть ваш сетевой запрос.
+                // ВНИМАНИЕ: Если вы делаете запрос к GitHub, используйте raw.githubusercontent.com
+                // Или прокси, иначе будет ошибка CORS.
                 setTimeout(function() {
                     try {
+                        // ТЕСТОВЫЕ ДАННЫЕ (Замените на реальный API)
                         items = [
-                            {title: 'Источник 1: Filmix UHD', quality: '2160p', url: 'https://vjs.zencdn.net/v/oceans.mp4'},
-                            {title: 'Источник 2: Filmix HD', quality: '1080p', url: 'https://vjs.zencdn.net/v/oceans.mp4'}
+                            {title: 'Filmix Online', quality: '1080p', url: 'https://vjs.zencdn.net/v/oceans.mp4'},
+                            {title: 'Rezka Mirror', quality: '720p', url: 'https://vjs.zencdn.net/v/oceans.mp4'}
                         ];
 
                         if (items.length) _this.draw();
-                        else _this.empty();
+                        else _this.empty('Источники не найдены');
                     } catch (e) {
-                        _this.empty('Ошибка обработки данных');
+                        _this.empty('Ошибка: ' + e.message);
                     } finally {
-                        UI.loading(false);
+                        SafeUI.loading(false);
                     }
-                }, 500);
+                }, 400);
             };
 
             this.draw = function() {
@@ -77,14 +77,10 @@
                         <div class="selector-item__label">' + item.quality + '</div>\\
                     </div>');
                     
-                    element.on('hover:focus', function() {
-                        active = index;
-                    }).on('hover:enter', function() {
-                        Lampa.Player.play({
-                            url: item.url,
-                            title: item.title
-                        });
-                    });
+                    element.on('hover:focus', function() { active = index; })
+                           .on('hover:enter', function() {
+                               Lampa.Player.play({ url: item.url, title: item.title });
+                           });
                     
                     body.append(element);
                 });
@@ -93,7 +89,7 @@
             };
 
             this.empty = function(msg) {
-                html.append('<div class="empty">' + (msg || 'Контент не найден') + '</div>');
+                html.append('<div class="empty" style="text-align:center;padding:40px;opacity:0.5">' + msg + '</div>');
                 _this.enable();
             };
 
@@ -101,7 +97,7 @@
                 Lampa.Controller.add('content', {
                     toggle: function() {
                         Lampa.Controller.collectionSet(html);
-                        Lampa.Controller.collectionFocus(active === -1 ? false : body.children().eq(active), html);
+                        Lampa.Controller.collectionFocus(active >= 0 ? body.children().eq(active) : false, html);
                     },
                     left: function() { Lampa.Controller.toggle('head'); },
                     up: function() { Lampa.Controller.toggle('head'); },
@@ -110,10 +106,7 @@
                 Lampa.Controller.toggle('content');
             };
 
-            this.render = function() {
-                return html;
-            };
-
+            this.render = function() { return html; };
             this.terminate = function() {
                 network.clear();
                 scroll.destroy();
@@ -121,39 +114,62 @@
             };
         }
 
-        // Слушатель для карточки фильма
+        /**
+         * Внедрение кнопки (Исправлено для Lampack)
+         */
+        function injectButton(e) {
+            var render = e.render;
+            
+            // Если кнопка уже есть — выходим
+            if (render.find('.button--swo-act').length > 0) return;
+
+            var button = $('<div class="full-start__button button--swo-act focusable">\\
+                <svg height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg" style="margin-right:10px"><path d="M10 16.5l6-4.5-6-4.5v9zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="white"/></svg>\\
+                <span>Смотреть (SWO)</span>\\
+            </div>');
+
+            button.on('hover:enter', function () {
+                Lampa.Activity.push({
+                    title: 'Выбор источника',
+                    component: 'swo_component',
+                    object: e.data
+                });
+            });
+
+            // Пытаемся найти контейнер кнопок (разные варианты для разных сборок)
+            var container = render.find('.full-start__buttons');
+            if (container.length) {
+                container.append(button);
+                console.log('[SWO] Button injected into .full-start__buttons');
+            } else {
+                // Если стандартный контейнер не найден, пробуем в любое место в карточке
+                render.append(button); 
+                console.log('[SWO] Button injected as fallback');
+            }
+        }
+
+        // Слушаем события открытия карточки
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complite' || e.type == 'ready') {
-                var render = e.render;
-                
-                // ЗАЩИТА ОТ ДУБЛИКАТОВ
-                if ($('.button--swo-watch', render).length > 0) return;
-
-                var button = $('<div class="full-start__button button--swo-watch focusable">\\
-                    <svg height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M8 5v14l11-7z" fill="white"/></svg>\\
-                    <span>Смотреть Online</span>\\
-                </div>');
-
-                button.on('hover:enter', function () {
-                    Lampa.Activity.push({
-                        url: '',
-                        title: 'Выбор источника (SWO)',
-                        component: 'swo_component',
-                        object: e.data
-                    });
-                });
-
-                render.find('.full-start__buttons').append(button);
+                // Небольшая задержка, чтобы DOM успел отрисоваться в Lampack
+                setTimeout(function() { injectButton(e); }, 100);
             }
         });
 
-        // Регистрация компонента
-        Lampa.Component.add('swo_component', FilmixComponent);
-        console.log('[SWO] Plugin swo.js version 1.1.0 loaded');
+        // Регистрация
+        Lampa.Component.add('swo_component', SWOComponent);
+        console.log('[SWO] Plugin Ready');
     }
 
-    if (window.appready) startPlugin();
-    else Lampa.Listener.follow('app', function (e) {
-        if (e.type == 'ready') startPlugin();
-    });
+    // Безопасный запуск
+    try {
+        if (window.appready) startPlugin();
+        else {
+            Lampa.Listener.follow('app', function (e) {
+                if (e.type == 'ready') startPlugin();
+            });
+        }
+    } catch(e) {
+        console.error('[SWO] Critical Init Error:', e);
+    }
 })();
