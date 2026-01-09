@@ -3,11 +3,10 @@
     'use strict';
 
     /**
-     * Filmix Nexus (Series Pro Fix) v2.0.1
-     * - Исправлено появление кнопки озвучки в сериалах
-     * - Добавлена поддержка альтернативных полей перевода (translation/voice)
-     * - Авто-сброс фильтров при смене сезона
-     * - Фикс навигации и component.pause
+     * Filmix Nexus (Series Pro Fix) v2.0.3
+     * - Поддержка выбора озвучки через кнопки-ссылки (videos__button)
+     * - Исправлено появление кнопки выбора перевода в сериалах
+     * - Динамическая подгрузка данных при смене озвучки
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -31,12 +30,11 @@
         };
 
         $('<style>\
-            .fx-nexus-header { display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: rgba(0,0,0,0.7); border-bottom: 1px solid rgba(255,255,255,0.08); position: sticky; top: 0; z-index: 10; }\
-            .fx-nexus-pill { background: rgba(255,255,255,0.1); padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; color: #fff; transition: all 0.2s; white-space: nowrap; }\
-            .fx-nexus-pill.focus { background: #fff; color: #000; border-color: #fff; transform: scale(1.02); }\
-            .fx-nexus-title { font-size: 0.85em; color: rgba(255,255,255,0.4); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; font-weight: 300; }\
-            .fx-card-play { width: 36px; height: 36px; background: #e50914; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 10px rgba(229, 9, 20, 0.3); }\
-            .fx-nexus-component { background: #141414; min-height: 100%; }\
+            .fx-nexus-header { display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: rgba(0,0,0,0.8); border-bottom: 1px solid rgba(255,255,255,0.1); sticky top: 0; z-index: 10; }\
+            .fx-nexus-pill { background: rgba(255,255,255,0.12); padding: 8px 18px; border-radius: 8px; font-size: 14px; font-weight: 700; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; color: #fff; transition: all 0.2s; white-space: nowrap; }\
+            .fx-nexus-pill.focus { background: #fff; color: #000; border-color: #fff; transform: scale(1.05); }\
+            .fx-nexus-title { font-size: 12px; color: rgba(255,255,255,0.4); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px; }\
+            .fx-card-play { width: 36px; height: 36px; background: #ff0000; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }\
         </style>').appendTo('head');
 
         function FilmixComponent(object) {
@@ -53,10 +51,12 @@
 
             var filters = {
                 season: '1 сезон',
-                voice: 'Любой'
+                voice: 'Любой',
+                voice_url: ''
             };
 
             var raw_data = [];
+            var voice_links = {}; // Хранилище ссылок на другие озвучки
             var total_seasons = object.movie.number_of_seasons || (object.movie.seasons ? object.movie.seasons.length : 0);
 
             this.create = function () {
@@ -78,10 +78,9 @@
                     header_items.push(s_btn);
                 }
 
-                var voices = this.getUniqueVoices();
-                // Показываем кнопку, если есть выбор ИЛИ если уже выбран какой-то перевод
-                if (voices.length > 2 || (voices.length > 1 && filters.voice !== 'Любой')) { 
-                    var v_btn = $('<div class="fx-nexus-pill selector focusable">Перевод: ' + filters.voice + '</div>');
+                var voices = this.getAvailableVoices();
+                if (voices.length > 1) { 
+                    var v_btn = $('<div class="fx-nexus-pill selector focusable">Озвучка: ' + filters.voice + '</div>');
                     v_btn.on('hover:enter', function() { self.showVoiceMenu(voices); });
                     header.append(v_btn);
                     header_items.push(v_btn);
@@ -90,12 +89,16 @@
                 header.append('<div class="fx-nexus-title">' + (object.movie.title || object.movie.name) + '</div>');
             };
 
-            this.getUniqueVoices = function() {
+            this.getAvailableVoices = function() {
                 var v = ['Любой'];
+                // 1. Извлекаем из серий (если есть поле translate)
                 raw_data.forEach(function(d) {
-                    // Проверка нескольких полей для надежности (для сериалов)
                     var name = (d.translate || d.translation || d.voice || '').trim();
                     if (name && v.indexOf(name) === -1) v.push(name);
+                });
+                // 2. Извлекаем из кнопок-ссылок (специфично для сериалов)
+                Object.keys(voice_links).forEach(function(name) {
+                    if (v.indexOf(name) === -1) v.push(name);
                 });
                 return v;
             };
@@ -107,11 +110,12 @@
                     menu.push({ title: i + ' сезон', value: i });
                 }
                 Lampa.Select.show({
-                    title: 'Выберите сезон',
+                    title: 'Выбор сезона',
                     items: menu,
                     onSelect: function(item) {
                         filters.season = item.title;
-                        filters.voice = 'Любой'; // Сброс при смене сезона обязателен
+                        filters.voice = 'Любой';
+                        filters.voice_url = '';
                         self.loadContent();
                     },
                     onBack: function() { Lampa.Controller.toggle('fx_nexus_ctrl'); }
@@ -121,48 +125,71 @@
             this.showVoiceMenu = function(voices) {
                 var self = this;
                 Lampa.Select.show({
-                    title: 'Выберите озвучку',
+                    title: 'Выбор перевода',
                     items: voices.map(function(v){ return {title: v, value: v}; }),
                     onSelect: function(item) {
                         filters.voice = item.value;
-                        self.renderList();
+                        if (voice_links[item.value]) {
+                            filters.voice_url = voice_links[item.value];
+                            self.loadContent(filters.voice_url);
+                        } else {
+                            filters.voice_url = '';
+                            self.renderList();
+                        }
                     },
                     onBack: function() { Lampa.Controller.toggle('fx_nexus_ctrl'); }
                 });
             };
 
-            this.loadContent = function() {
+            this.loadContent = function(custom_url) {
                 var self = this;
                 var s_num = (filters.season.match(/\d+/) || [1])[0];
                 var kp_id = object.movie.kinopoisk_id || object.movie.kp_id;
                 var id_param = kp_id ? 'kinopoisk_id=' + kp_id : 'postid=' + object.movie.id;
-                var url = BASE_DOMAIN + '/lite/fxapi?rjson=False&' + id_param + '&s=' + s_num + '&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors';
                 
+                var url = custom_url || (BASE_DOMAIN + '/lite/fxapi?rjson=False&' + id_param + '&s=' + s_num + '&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors');
+                
+                // Исправляем URL если это не полный путь
+                if (url.indexOf('http') !== 0) url = BASE_DOMAIN + (url.indexOf('/') === 0 ? '' : '/') + url;
+
                 safeLoading.show();
                 network.native(PROXIES[currentProxyIdx] + url, function (res) {
                     safeLoading.hide();
                     self.parseData(res);
                 }, function () {
                     safeLoading.hide();
-                    self.empty('Ошибка сети. Проверьте подключение.');
+                    self.empty('Ошибка загрузки данных');
                 }, false, { dataType: 'text' });
             };
 
             this.parseData = function(res) {
                 raw_data = [];
+                // Не очищаем voice_links полностью, чтобы сохранить текущий список при фильтрации
                 var $dom = $('<div>' + res + '</div>');
+                
+                // Поиск кнопок перевода (Сериалы)
+                $dom.find('.videos__button').each(function() {
+                    try {
+                        var json = JSON.parse($(this).attr('data-json'));
+                        var name = $(this).text().trim();
+                        if (json && json.method === 'link' && json.url && name) {
+                            voice_links[name] = json.url;
+                        }
+                    } catch(e) {}
+                });
+
+                // Поиск серий
                 $dom.find('.videos__item').each(function() {
                     try {
                         var json = JSON.parse($(this).attr('data-json'));
                         if (json) {
-                            // Нормализация данных для сериалов
                             if (!json.translate && json.translation) json.translate = json.translation;
                             raw_data.push(json);
                         }
                     } catch(e) {}
                 });
                 
-                if (raw_data.length === 0) return this.empty('Видео файлы не найдены');
+                if (raw_data.length === 0 && Object.keys(voice_links).length === 0) return this.empty('Ничего не найдено');
                 this.renderList();
             };
 
@@ -175,31 +202,33 @@
                 this.updateHeader();
 
                 raw_data.forEach(function(data) {
-                    var voice_name = (data.translate || 'Стандарт').trim();
-                    if (filters.voice !== 'Любой' && voice_name !== filters.voice) return;
+                    var voice_name = (data.translate || data.translation || 'Стандарт').trim();
+                    // Фильтрация работает только если озвучка указана прямо в объекте серии
+                    if (filters.voice !== 'Любой' && voice_name !== filters.voice && !filters.voice_url) return;
 
-                    var card = $('<div class="selector focusable" style="padding:16px; margin:8px 20px; background:rgba(255,255,255,0.03); border-radius:12px; display:flex; align-items:center; gap:16px; border:1px solid rgba(255,255,255,0.02); transition: transform 0.2s;">\
+                    var title = data.title || (data.translate ? voice_name : 'Серия');
+                    var card = $('<div class="selector focusable" style="padding:16px; margin:8px 20px; background:rgba(255,255,255,0.05); border-radius:12px; display:flex; align-items:center; gap:16px; border:1px solid rgba(255,255,255,0.03);">\
                         <div class="fx-card-play"><svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>\
                         <div style="flex:1; overflow:hidden;">\
-                            <div style="font-size:15px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + voice_name + '</div>\
-                            <div style="font-size:11px; opacity:0.4; margin-top:4px; letter-spacing: 0.5px;">' + (data.maxquality || 'Full HD') + '</div>\
+                            <div style="font-size:16px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + title + '</div>\
+                            <div style="font-size:11px; opacity:0.4; margin-top:4px;">' + (data.maxquality || 'HD') + '</div>\
                         </div>\
                     </div>');
 
                     card.on('hover:enter', function() {
-                        Lampa.Player.play({ url: data.url, title: voice_name, movie: object.movie });
+                        Lampa.Player.play({ url: data.url, title: title, movie: object.movie });
                     });
 
                     container.append(card);
                     items.push(card);
                 });
 
-                if (items.length === 0) container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Нет результатов для этой озвучки</div>');
+                if (items.length === 0) container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Выберите перевод в меню выше</div>');
                 this.start();
             };
 
             this.empty = function(msg) {
-                container.empty().append('<div style="padding:120px 20px; text-align:center; opacity:0.3; font-size:16px;">' + msg + '</div>');
+                container.empty().append('<div style="padding:100px 20px; text-align:center; opacity:0.4;">' + msg + '</div>');
                 this.updateHeader();
                 this.start();
             };
