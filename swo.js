@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    var VERSION = '1.2.8';
+    var VERSION = '1.2.9';
     var PROXIES = [
         'https://cors.lampa.stream/',
         'https://cors.kp556.workers.dev:8443/',
@@ -29,16 +29,46 @@
             return files.render();
         };
 
-        function safeParse(str) {
-            if (typeof str === 'object') return str;
-            if (!str || typeof str !== 'string') return null;
+        function extractLinks(res) {
+            var found = [];
+            if (!res) return found;
+
+            // 1. Попытка парсинга как JSON
             try {
-                if (str.trim().indexOf('<') === 0) return null;
-                var clean = str.replace(/^\ufeff/g, '').trim();
-                return JSON.parse(clean);
-            } catch(e) {
-                return null;
-            }
+                var json = typeof res === 'string' ? JSON.parse(res) : res;
+                if (json.contents) json = JSON.parse(json.contents);
+                if (json.links) return json.links;
+                if (json.url) return [{name: 'Основной поток', url: json.url, quality: '720p'}];
+            } catch(e) {}
+
+            // 2. Попытка парсинга как HTML (ваш случай с videos__line)
+            var wrapper = $('<div>').append(res);
+            wrapper.find('[data-json]').each(function() {
+                try {
+                    var jd = JSON.parse($(this).attr('data-json'));
+                    // Извлекаем только прямые ссылки на видео (method: play)
+                    if (jd.method === 'play' && jd.url) {
+                        var name = $(this).find('.videos__item-title').text() || jd.title || 'Видео файл';
+                        var quality = 'Auto';
+                        
+                        if (jd.quality) {
+                            if (typeof jd.quality === 'string') quality = jd.quality;
+                            else {
+                                var q_keys = Object.keys(jd.quality);
+                                quality = q_keys[0] || 'Auto';
+                            }
+                        }
+                        
+                        found.push({
+                            name: name.trim(),
+                            url: jd.url,
+                            quality: quality
+                        });
+                    }
+                } catch(e) {}
+            });
+
+            return found;
         }
 
         this.load = function() {
@@ -50,7 +80,7 @@
             if (Lampa.Select) {
                 Lampa.Select.show({
                     title: 'Filmix Ultra v' + VERSION,
-                    items: [{ title: 'Подключение: ' + displayProxy, wait: true }],
+                    items: [{ title: 'Парсинг: ' + displayProxy, wait: true }],
                     onBack: function() { 
                         network.clear(); 
                         Lampa.Activity.backward();
@@ -59,13 +89,12 @@
             }
 
             network.native(proxyUrl + targetUrl, function (res) {
-                var data = safeParse(res);
-                if (data && data.contents) data = safeParse(data.contents);
+                var links = extractLinks(res);
 
-                if (data && (data.links || data.url)) {
+                if (links.length > 0) {
                     if (Lampa.Select) Lampa.Select.close();
                     Lampa.Storage.set('fx_ultra_proxy_idx', currentProxyIdx.toString());
-                    self.build(data);
+                    self.build(links);
                 } else {
                     self.retryOrError();
                 }
@@ -73,7 +102,7 @@
                 self.retryOrError();
             }, false, { 
                 dataType: 'text',
-                timeout: 8000
+                timeout: 10000
             });
         };
 
@@ -84,27 +113,20 @@
                 this.load();
             } else {
                 if (Lampa.Select) Lampa.Select.close();
-                this.empty('Сервер Filmix временно недоступен или прокси заблокированы.');
+                this.empty('Видео не найдено (проверьте прокси или источник)');
             }
         };
 
-        this.build = function (data) {
+        this.build = function (links) {
             var self = this;
             container.empty();
             items = [];
             
-            var links = (data.links && data.links.length) ? data.links : [];
-            if (links.length === 0 && data.url) {
-                links.push({name: 'Основной поток', quality: '720p', url: data.url});
-            }
-            
-            if (links.length === 0) return this.empty('Видео не найдено');
-
             links.forEach(function(l, i) {
                 var item = $(`
                     <div class="online-fx-item selector" style="padding:1.1em; margin:0.4em 0; background:rgba(255,255,255,0.05); border-radius:0.4em; display:flex; justify-content:space-between; align-items:center; border: 1px solid rgba(255,255,255,0.03);">
                         <span style="font-size:1.1em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${l.name}</span>
-                        <b style="background:#ff9800; color:#000; padding:0.1em 0.5em; border-radius:0.2em; font-size:0.8em; flex-shrink:0; margin-left:10px;">${l.quality || 'Auto'}</b>
+                        <b style="background:#ff9800; color:#000; padding:0.1em 0.5em; border-radius:0.2em; font-size:0.8em; flex-shrink:0; margin-left:10px;">${l.quality}</b>
                     </div>
                 `);
 
