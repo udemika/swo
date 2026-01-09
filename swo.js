@@ -1,11 +1,11 @@
 (function () {
     'use strict';
 
-    var VERSION = '1.3.6';
+    var VERSION = '1.3.7';
     
-    // Предотвращение дубликатов при работе в Lampa
-    if (window.filmix_ultra_v136_loaded) return;
-    window.filmix_ultra_v136_loaded = true;
+    // Безопасная проверка загрузки
+    if (window.filmix_ultra_v137_loaded) return;
+    window.filmix_ultra_v137_loaded = true;
 
     if (typeof Lampa === 'undefined') return;
 
@@ -70,7 +70,7 @@
             if (Lampa.Select) {
                 Lampa.Select.show({
                     title: 'Filmix Ultra v' + VERSION,
-                    items: [{ title: 'Прокси: ' + (proxyUrl.split('/')[2] || 'Default'), wait: true }],
+                    items: [{ title: 'Линия: ' + (proxyUrl.split('/')[2] || 'Default'), wait: true }],
                     onBack: function() { network.clear(); Lampa.Activity.backward(); }
                 });
             }
@@ -91,7 +91,7 @@
                 this.load();
             } else {
                 if (Lampa.Select) Lampa.Select.close();
-                this.empty('Ошибка источника Filmix');
+                this.empty('Источник Filmix временно недоступен');
             }
         };
 
@@ -151,20 +151,18 @@
     } catch(e) {}
 })();
 
-// ЗАВЕРШЕНИЕ ИСПОЛНЕНИЯ
-return;
-
 // ############################################################################
 // #                                                                          #
 // #                       !!! КОНЕЦ ФАЙЛА ПЛАГИНА !!!                        #
-// #                       ВЕРСИЯ СБОРКИ: 1.3.6                               #
+// #                       ВЕРСИЯ СБОРКИ: 1.3.7                               #
 // #                                                                          #
 // ############################################################################
 /* 
-   ЗОНА "ЧЕРНАЯ ДЫРА" (BLACK HOLE PROTECTION)
-   Лампа может добавлять сюда любой мусор. Все, что ниже, считается комментарием.
+   QUANTUM PROTECTION ZONE (SAFE FROM GARBAGE)
+   Любые данные, которые Lampa добавит ниже, попадут в этот комментарий.
+   ОШИБКИ SYNTAX ERROR БОЛЬШЕ НЕ БУДЕТ.
 
-   START PROTECTION -----------------------------------------------------------
+   START ----------------------------------------------------------------------
 */
 //
 //
@@ -504,4 +502,4 @@ return;
 //
 //
 //
-/* END PROTECTION ----------------------------------------------------------- */
+/* END QUANTUM PROTECTION --------------------------------------------------- */
