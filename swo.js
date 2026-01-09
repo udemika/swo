@@ -1,17 +1,17 @@
 (function () {
     'use strict';
 
-    var VERSION = '1.2.5';
-    // Список прокси, оптимизированных для Lampa
+    var VERSION = '1.2.6';
+    // Прокси от пользователя + проверенные временем
     var PROXIES = [
         'https://cors.lampa.stream/',
         'https://cors.byskaz.ru/',
-        'https://corsproxy.io/?',
-        'https://api.codetabs.com/v1/proxy?quest='
+        'https://cors.kp556.workers.dev:8443/',
+        'https://corsproxy.io/?'
     ];
     var currentProxyIdx = 0;
     
-    console.log('Filmix Ultra v' + VERSION + ' - Initializing with Lampa Proxies...');
+    console.log('Filmix Ultra v' + VERSION + ' - Advanced Parser Active');
 
     function FilmixComponent(object) {
         var network = new (Lampa.Request || Lampa.Reguest)();
@@ -33,10 +33,13 @@
             var self = this;
             var targetUrl = 'http://showypro.com/lite/fxapi?rjson=False&postid=' + object.movie.id + '&s=1&uid=i8nqb9vw&showy_token=f8377057-90eb-4d76-93c9-7605952a096l';
             
+            var proxyUrl = PROXIES[currentProxyIdx];
+            var displayProxy = proxyUrl.split('/')[2] || 'proxy';
+
             if (Lampa.Select) {
                 Lampa.Select.show({
                     title: 'Filmix Ultra',
-                    items: [{ title: 'Прокси: ' + (PROXIES[currentProxyIdx].split('/')[2]) + '...', wait: true }],
+                    items: [{ title: 'Загрузка через ' + displayProxy + '...', wait: true }],
                     onBack: function() { 
                         network.clear(); 
                         Lampa.Activity.backward();
@@ -44,49 +47,40 @@
                 });
             }
 
-            // Формируем URL запроса. Для большинства Lampa прокси это просто префикс.
-            var reqUrl = PROXIES[currentProxyIdx] + targetUrl;
-
-            network.silent(reqUrl, function (res) {
+            // Используем native, чтобы Lampa не пыталась парсить JSON сама и не выдавала ошибку
+            network.native(proxyUrl + targetUrl, function (res) {
                 if (Lampa.Select) Lampa.Select.close();
+                
                 try {
-                    var json;
-                    if (typeof res === 'string') {
-                        // Если прокси вернул строку (иногда бывает двойная сериализация)
-                        try { json = JSON.parse(res); } catch(e) { json = res; }
-                    } else {
-                        json = res;
-                    }
-
-                    // Обработка оберток типа AllOrigins
+                    var rawData = res;
+                    // Если прокси вернул объект (уже распарсил), берем как есть, иначе парсим
+                    var json = typeof rawData === 'string' ? JSON.parse(rawData.trim()) : rawData;
+                    
+                    // Обработка оберток (например, AllOrigins или Cloudflare-прокси)
                     var content = json.contents || json;
-                    if (typeof content === 'string' && content.indexOf('{') !== -1) {
-                        content = JSON.parse(content);
-                    }
+                    if (typeof content === 'string') content = JSON.parse(content.trim());
                     
                     if (content && (content.links || content.url)) {
                         self.build(content);
                     } else {
-                        console.error('Filmix Ultra: Invalid content structure', content);
-                        self.retryOrError('Данные не найдены');
+                        throw "Нет ссылок";
                     }
                 } catch(e) { 
-                    console.error('Filmix Ultra: Parse error', e);
-                    self.retryOrError('Ошибка обработки'); 
+                    console.error('Filmix Ultra: Parse error on ' + displayProxy, e);
+                    self.retryOrError('Ошибка данных'); 
                 }
-            }, function () {
+            }, function (err) {
                 self.retryOrError('Ошибка сети');
-            });
+            }, false, { dataType: 'text' }); // Принудительно читаем как текст
         };
 
         this.retryOrError = function(msg) {
             if (currentProxyIdx < PROXIES.length - 1) {
                 currentProxyIdx++;
-                console.log('Filmix Ultra: Switch to proxy ' + PROXIES[currentProxyIdx]);
                 this.load();
             } else {
                 if (Lampa.Select) Lampa.Select.close();
-                this.empty(msg + '. Все прокси недоступны.');
+                this.empty('Контент недоступен. Попробуйте другой фильм или проверьте сеть.');
             }
         };
 
@@ -95,28 +89,25 @@
             container.empty();
             items = [];
             
-            var links = (data && data.links && data.links.length) ? data.links : [];
-            
-            // Если массив пустой, но есть одиночная ссылка (некоторые API так отдают)
+            var links = (data.links && data.links.length) ? data.links : [];
             if (links.length === 0 && data.url) {
-                links.push({name: 'Прямой поток (SD)', quality: '720p', url: data.url});
+                links.push({name: 'Основной поток', quality: '720p', url: data.url});
             }
             
             if (links.length === 0) return this.empty('Потоки не найдены');
 
             links.forEach(function(l, i) {
-                if (!l.url) return;
                 var item = $(`
-                    <div class="online-fx-item selector" style="padding:1.2em; margin:0.5em 0; background:rgba(255,255,255,0.05); border-radius:0.3em; display:flex; justify-content:space-between; align-items:center;">
-                        <span style="font-size:1.3em; pointer-events:none;">${l.name}</span>
-                        <b style="background:#ff9800; color:#fff; padding:0.2em 0.6em; border-radius:0.2em; font-size:1em; pointer-events:none;">${l.quality || 'Auto'}</b>
+                    <div class="online-fx-item selector" style="padding:1.1em; margin:0.4em 0; background:rgba(255,255,255,0.05); border-radius:0.4em; display:flex; justify-content:space-between; align-items:center; border: 1px solid rgba(255,255,255,0.05);">
+                        <span style="font-size:1.2em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-right:10px;">${l.name}</span>
+                        <b style="background:#ff9800; color:#000; padding:0.1em 0.5em; border-radius:0.2em; font-size:0.9em; flex-shrink:0;">${l.quality || 'HD'}</b>
                     </div>
                 `);
 
                 item.on('hover:enter', function() {
                     Lampa.Player.play({ 
                         url: l.url.replace('http://', 'https://'), 
-                        title: object.movie.title || object.movie.name 
+                        title: (object.movie.title || object.movie.name) + ' - ' + l.name
                     });
                 }).on('hover:focus', function(e) {
                     active_item = i;
@@ -132,7 +123,7 @@
 
         this.empty = function (msg) { 
             container.empty();
-            var errorBtn = $(`<div class="selector" style="padding:2em; text-align:center; color:#ff9800;">${msg}<br><br><small style="color:#fff; opacity:0.5">Нажмите "Назад" для выхода</small></div>`);
+            var errorBtn = $(`<div class="selector" style="padding:2em; text-align:center; color:#ff9800;">${msg}<br><br><small style="color:#fff; opacity:0.5">Нажмите ОК, чтобы вернуться</small></div>`);
             errorBtn.on('hover:enter', function() { Lampa.Activity.backward(); });
             container.append(errorBtn);
             this.start();
@@ -169,7 +160,7 @@
         };
     }
 
-    Lampa.Component.add('fx_ultra_v5', FilmixComponent);
+    Lampa.Component.add('fx_ultra_v6', FilmixComponent);
 
     function injectButton(event) {
         $('.fx-ultra-native').remove();
@@ -189,7 +180,7 @@
             Lampa.Activity.push({
                 url: '',
                 title: 'Онлайн - Filmix',
-                component: 'fx_ultra_v5',
+                component: 'fx_ultra_v6',
                 movie: movie,
                 page: 1
             });
