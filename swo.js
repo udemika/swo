@@ -1,14 +1,13 @@
 (function () {
     'use strict';
 
-    // Константы для предотвращения ошибок undefined
-    var EMPTY_URL = 'about:blank';
     var PLUGIN_NAME = 'Filmix Online';
-    var PLUGIN_VER = '1.1.5';
+    var PLUGIN_VER = '1.1.6';
+    var EMPTY_URL = 'https://localhost/empty.png'; // Валидный HTTPS URL для заглушки
 
-    console.log('Filmix: Starting v' + PLUGIN_VER + ' for zrovid.com');
+    console.log('Filmix: Init v' + PLUGIN_VER + ' for HTTPS origin');
 
-    // 1. Стили
+    // 1. Стили (без изменений, они стабильны)
     var style = `
         <style>
         .online-prestige{position:relative;border-radius:.3em;background-color:rgba(0,0,0,0.3);display:flex;will-change:transform;margin-top:1em}
@@ -20,20 +19,22 @@
         .online-prestige__quality{color:#e67e22;font-weight:bold;margin-left:1em}
         .online-prestige.focus{background:#fff;color:#000}
         .online-prestige.focus .online-prestige__quality{color:#d35400}
-        .online-prestige__episode-number{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:2em;font-weight:black;color:rgba(255,255,255,0.5)}
-        .full-start__button.btn--filmix{background:#e67e22 !important;color:#fff !important}
+        .full-start__button.btn--filmix{background:#e67e22 !important;color:#fff !important;margin-right:10px}
         </style>
     `;
     if (!$('style:contains("online-prestige")').length) $('body').append(style);
 
-    // 2. Регистрация плагина с защитой от 404 (добавляем иконку)
+    // 2. Регистрация с защитой от TypeError: replace
+    // Передаем ВСЕ возможные поля, которые может дергать ядро Лампы
     Lampa.Plugins.add({
         name: PLUGIN_NAME,
         version: PLUGIN_VER,
-        description: 'Просмотр Filmix через ShowyPro API',
+        description: 'Filmix for Zrovid',
         author: 'ShowyPro',
-        icon: EMPTY_URL, // Предотвращает 404 /undefined
-        help: 'Версия адаптированная под zrovid.com'
+        icon: EMPTY_URL,
+        url: EMPTY_URL,
+        link: EMPTY_URL,
+        help: 'https://lampa.mx'
     });
 
     function FilmixSwo(object) {
@@ -43,12 +44,12 @@
         this.create = function () {
             var self = this;
             var id = object.movie.id;
-            // API ShowyPro
-            var url = 'http://showypro.com/lite/fxapi?rjson=False&postid=' + id + '&s=1&uid=i8nqb9vw&showy_token=f8377057-90eb-4d76-93c9-7605952a096l';
+            // Используем HTTPS прокси и HTTPS API
+            var url = 'https://corsproxy.io/?' + encodeURIComponent('http://showypro.com/lite/fxapi?rjson=False&postid=' + id + '&s=1&uid=i8nqb9vw&showy_token=f8377057-90eb-4d76-93c9-7605952a096l');
 
             Lampa.Select.show({
                 title: 'Filmix',
-                items: [{ title: 'Поиск потоков...', wait: true }],
+                items: [{ title: 'Поиск (HTTPS)...', wait: true }],
                 onBack: function() { network.clear(); }
             });
 
@@ -71,18 +72,17 @@
                 if (json && json.links) {
                     json.links.forEach(function(item) {
                         streams.push({
-                            title: item.name || item.title || 'Видео',
+                            title: item.name || 'Видео',
                             quality: item.quality || '720p',
-                            url: item.url || item.file || EMPTY_URL
+                            url: (item.url || item.file || "").replace('http://', 'https://')
                         });
                     });
                 }
-            } catch (e) { console.error('Filmix: Data error', e); }
+            } catch (e) { console.error('Filmix: Parse fail', e); }
 
             if (streams.length === 0) {
                 streams = [
-                    { title: 'Filmix 720p', quality: '720p', url: 'http://showypro.com/get_video?id=' + object.movie.id + '&q=720&uid=i8nqb9vw&token=f8377057-90eb-4d76-93c9-7605952a096l' },
-                    { title: 'Filmix 1080p', quality: '1080p', url: 'http://showypro.com/get_video?id=' + object.movie.id + '&q=1080&uid=i8nqb9vw&token=f8377057-90eb-4d76-93c9-7605952a096l' }
+                    { title: 'Filmix 720p (Direct)', quality: '720p', url: 'https://corsproxy.io/?' + encodeURIComponent('http://showypro.com/get_video?id=' + object.movie.id + '&q=720&uid=i8nqb9vw&token=f8377057-90eb-4d76-93c9-7605952a096l') }
                 ];
             }
 
@@ -92,23 +92,18 @@
                     <div class="online-prestige selector">
                         <div class="online-prestige__img">
                             <img src="${Lampa.TMDB.image('t/p/w300' + object.movie.backdrop_path)}" alt="">
-                            <div class="online-prestige__episode-number">${index + 1}</div>
                         </div>
                         <div class="online-prestige__body">
                             <div class="online-prestige__title">${element.title}</div>
-                            <div class="online-prestige__info">
-                                <span>Источник Filmix</span>
-                                <span class="online-prestige__quality">${element.quality}</span>
-                            </div>
+                            <div class="online-prestige__quality">${element.quality}</div>
                         </div>
                     </div>
                 `);
 
                 html.on('hover:enter', function() {
-                    if (element.url === EMPTY_URL) return Lampa.Noty.show('Ссылка не найдена');
                     Lampa.Player.play({
                         url: element.url,
-                        title: object.movie.title + ' (' + element.quality + ')'
+                        title: object.movie.title
                     });
                 }).on('hover:focus', function(e) {
                     scroll.update($(e.target), true);
@@ -116,95 +111,69 @@
 
                 scroll.append(html);
             });
-
             Lampa.Controller.enable('content');
         };
 
-        this.empty = function () {
-            Lampa.Noty.show('Потоки не найдены.');
-        };
-
-        this.destroy = function () {
-            network.clear();
-            scroll.destroy();
-        };
+        this.empty = function () { Lampa.Noty.show('Ничего не найдено'); };
+        this.destroy = function () { network.clear(); scroll.destroy(); };
     }
 
     function startPlugin() {
-        if (window.filmix_swo_loaded) return;
-        window.filmix_swo_loaded = true;
+        if (window.filmix_swo_v116) return;
+        window.filmix_swo_v116 = true;
 
         Lampa.Component.add('online_fxapi', FilmixSwo);
 
-        // Кнопка в меню "Онлайн"
-        Lampa.Listener.follow('online', function (e) {
-            if (e.type == 'before') {
-                e.items.push({
-                    title: 'Filmix',
-                    source: 'online_fxapi'
+        // Инжекция кнопки через MutationObserver (самый надежный способ)
+        var injectButton = function(container, movieData) {
+            if (container.find('.btn--filmix').length > 0) return;
+            
+            var button = $('<div class="full-start__button selector btn--filmix"><span>Filmix</span></div>');
+            button.on('hover:enter', function () {
+                Lampa.Component.item('online_fxapi', {
+                    movie: movieData,
+                    display: container.closest('.activity')
                 });
-            }
-        });
+            });
+            
+            // Вставляем перед первой кнопкой или в конец
+            var firstBtn = container.find('.selector').first();
+            if (firstBtn.length) firstBtn.before(button);
+            else container.append(button);
+            
+            console.log('Filmix: Button injected into', container.attr('class'));
+        };
 
-        // Кнопка в карточке (Ultimate Inject)
+        // Следим за открытием карточки
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complete' || e.type == 'complite') {
-                var injectTimer = 0;
-                var tryInject = function() {
-                    var render = (e.object && e.object.render) ? e.object.render() : 
-                                 (e.object && e.object.activity && e.object.activity.render) ? e.object.activity.render() : null;
+                var render = (e.object && e.object.render) ? e.object.render() : null;
+                if (!render) return;
 
-                    if (!render) {
-                        if (injectTimer < 10) { injectTimer++; setTimeout(tryInject, 500); }
-                        return;
+                // Запускаем наблюдатель за DOM
+                var observer = new MutationObserver(function(mutations) {
+                    var target = render.find('.full-start__buttons, .full-movie__buttons, .buttons-list');
+                    if (target.length) {
+                        injectButton(target, e.data.movie);
+                        observer.disconnect(); // Перестаем следить после успеха
                     }
+                });
 
-                    if (render.find('.btn--filmix').length > 0) return;
-
-                    var button = $('<div class="full-start__button selector btn--filmix"><span>Filmix</span></div>');
-                    button.on('hover:enter', function () {
-                        Lampa.Component.item('online_fxapi', {
-                            movie: e.data.movie,
-                            display: render
-                        });
-                    });
-
-                    // Ищем куда вставить
-                    var containers = ['.full-start__buttons', '.full-movie__buttons', '.full-descr__buttons', '.buttons-list', '.full-movie__main-info'];
-                    var found = false;
-                    
-                    for (var i = 0; i < containers.length; i++) {
-                        var c = render.find(containers[i]);
-                        if (c.length) {
-                            c.append(button);
-                            found = true;
-                            break;
-                        }
-                    }
-
-                    if (!found) {
-                        // Если контейнеры не найдены, ищем любую кнопку и встаем после нее
-                        var anyBtn = render.find('.full-start__button, .selector').first();
-                        if (anyBtn.length) {
-                            anyBtn.after(button);
-                        } else {
-                            render.append(button);
-                        }
-                    }
-                    
-                    // Обновляем контроллер, чтобы кнопка стала кликабельной
-                    if (Lampa.Controller.enabled().name == 'full') Lampa.Controller.enable('full');
-                };
-                tryInject();
+                observer.observe(render[0], { childList: true, subtree: true });
+                
+                // Пробуем сразу (на случай если уже отрендерено)
+                setTimeout(function() {
+                    var target = render.find('.full-start__buttons, .full-movie__buttons, .buttons-list');
+                    if (target.length) injectButton(target, e.data.movie);
+                }, 100);
             }
         });
     }
 
-    // Запуск
     if (window.Lampa) startPlugin();
     else {
-        var waitLampa = setInterval(function () {
-            if (window.Lampa) { clearInterval(waitLampa); startPlugin(); }
+        var wait = setInterval(function () {
+            if (window.Lampa) { clearInterval(wait); startPlugin(); }
         }, 100);
     }
 })();
