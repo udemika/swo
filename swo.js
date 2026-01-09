@@ -6,7 +6,7 @@
     // Метаданные для Lampa
     Lampa.Plugins.add({
         name: 'Filmix Online',
-        version: '1.1.1',
+        version: '1.1.2',
         description: 'Просмотр Filmix через ShowyPro API',
         author: 'ShowyPro',
         help: 'Для работы требуется PRO аккаунт Filmix'
@@ -102,52 +102,73 @@
 
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complete' || e.type == 'complite') {
-                try {
-                    console.log('Filmix: Full event triggered', e.type);
-                    
-                    // Безопасное получение элемента рендеринга
-                    var render;
-                    if (e.object && typeof e.object.render === 'function') {
-                        render = e.object.render();
-                    } else if (e.object && e.object.activity && typeof e.object.activity.render === 'function') {
-                        render = e.object.activity.render();
-                    } else if (e.object && e.object.activity && e.object.activity.component && typeof e.object.activity.component.render === 'function') {
-                        render = e.object.activity.component.render();
-                    }
+                console.log('Filmix: Full event triggered', e.type);
 
-                    if (!render) {
-                        console.error('Filmix Error: Could not find render function in object', e.object);
-                        return;
-                    }
-
-                    // Проверка на дубликат
-                    if (render.find('.btn--filmix').length > 0) return;
-
-                    var button = $('<div class="full-start__button selector btn--filmix" style="background: #e67e22 !important; color: #fff !important;"><span>Filmix</span></div>');
-
-                    button.on('hover:enter', function () {
-                        console.log('Filmix: Button clicked');
-                        Lampa.Component.item('online_fxapi', {
-                            movie: e.data.movie,
-                            display: render
-                        });
-                    });
-
-                    // Поиск контейнера кнопок
-                    var container = render.find('.full-start__buttons, .full-movie__buttons, .full-start__actions');
-                    if (container.length > 0) {
-                        container.append(button);
-                        console.log('Filmix: Button injected successfully');
-                        
-                        if (Lampa.Controller.enabled().name == 'full') {
-                            Lampa.Controller.enable('full');
+                var tryInject = function(attempts) {
+                    try {
+                        var render;
+                        if (e.object && typeof e.object.render === 'function') {
+                            render = e.object.render();
+                        } else if (e.object && e.object.activity && typeof e.object.activity.render === 'function') {
+                            render = e.object.activity.render();
+                        } else if (e.object && e.object.activity && e.object.activity.component && typeof e.object.activity.component.render === 'function') {
+                            render = e.object.activity.component.render();
                         }
-                    } else {
-                        console.warn('Filmix: Could not find button container in render');
+
+                        if (!render) {
+                            if (attempts > 0) setTimeout(function() { tryInject(attempts - 1); }, 200);
+                            return;
+                        }
+
+                        if (render.find('.btn--filmix').length > 0) return;
+
+                        var button = $('<div class="full-start__button selector btn--filmix" style="background: #e67e22 !important; color: #fff !important;"><span>Filmix</span></div>');
+
+                        button.on('hover:enter', function () {
+                            console.log('Filmix: Button clicked');
+                            Lampa.Component.item('online_fxapi', {
+                                movie: e.data.movie,
+                                display: render
+                            });
+                        });
+
+                        // Еще более широкий список селекторов
+                        var selectors = [
+                            '.full-start__buttons',
+                            '.full-movie__buttons',
+                            '.full-start__actions',
+                            '.full-movie__actions',
+                            '.full-descr__buttons',
+                            '.full-movie__main-info'
+                        ];
+                        
+                        var container = render.find(selectors.join(', '));
+                        
+                        if (container.length > 0) {
+                            container.append(button);
+                            console.log('Filmix: Button injected successfully into:', container.attr('class'));
+                            
+                            if (Lampa.Controller.enabled().name == 'full') {
+                                Lampa.Controller.enable('full');
+                            }
+                        } else {
+                            if (attempts > 0) {
+                                console.log('Filmix: Container not found, retrying... Attempts left:', attempts);
+                                setTimeout(function() { tryInject(attempts - 1); }, 300);
+                            } else {
+                                console.warn('Filmix: Final attempt failed. Container not found.');
+                                // Крайний случай: добавляем просто в конец render
+                                render.append(button);
+                                console.log('Filmix: Button appended to main render as fallback');
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Filmix: Injection error', err);
                     }
-                } catch (err) {
-                    console.error('Filmix: Error during button injection', err);
-                }
+                };
+
+                // Запускаем попытки вставки (5 попыток с интервалом)
+                tryInject(5);
             }
         });
     }
