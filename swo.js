@@ -3,9 +3,10 @@
     'use strict';
 
     /**
-     * Filmix Nexus (SWO Edition) v1.9.1
-     * - Исправлена работа фильтров: теперь происходит реальный перезапрос данных
-     * - Реализован парсинг ответа от API
+     * Filmix Nexus (SWO Edition) v1.9.3
+     * - Динамические фильтры: кнопки "Сезоны", "Качество" или "Переводы" появляются только если они есть в ответе
+     * - Исправлен "белый экран": более надежная инициализация контроллера и обработка ошибок
+     * - Оптимизирован парсинг ответа showypro.com
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -24,6 +25,15 @@
         var savedIdx = Lampa.Storage.get('fx_nexus_proxy_idx', '0');
         var currentProxyIdx = parseInt(savedIdx);
 
+        var safeLoading = {
+            show: function() { 
+                try { if(window.Lampa && Lampa.Loading && typeof Lampa.Loading.show === 'function') Lampa.Loading.show(); } catch(e){} 
+            },
+            hide: function() { 
+                try { if(window.Lampa && Lampa.Loading && typeof Lampa.Loading.hide === 'function') Lampa.Loading.hide(); } catch(e){} 
+            }
+        };
+
         $('<style>\
             .fx-nexus-header { display: flex; align-items: center; gap: 20px; padding: 15px 25px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.05); }\
             .fx-nexus-label { font-size: 1.2em; color: #fff; opacity: 0.8; font-weight: 300; display: flex; align-items: center; gap: 10px; }\
@@ -33,7 +43,6 @@
             .fx-nexus-search-btn { display: flex; align-items: center; justify-content: center; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; }\
             .fx-nexus-search-btn.focus { background: rgba(255,255,255,0.2); }\
             .fx-nexus-search-input { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 12px; font-size: 0.9em; color: #fff; width: 220px; }\
-            .fx-nexus-history-info { padding: 10px 25px; display: flex; align-items: center; gap: 10px; opacity: 0.6; font-size: 0.9em; }\
         </style>').appendTo('head');
 
         function FilmixComponent(object) {
@@ -55,10 +64,18 @@
                 voice: 'Любой'
             };
 
+            // Доступные категории фильтров (динамически обновляются из ответа)
+            var available_filter_types = {
+                seasons: false,
+                qualities: false,
+                voices: false
+            };
+
             this.create = function () {
                 var self = this;
                 var filter_btn_wrap = $('<div class="fx-nexus-label">Фильтр </div>');
-                var filter_btn = $('<span class="fx-nexus-pill selector focusable">' + filters.season + '</span>');
+                var filter_label = (object.movie.number_of_seasons || object.movie.first_air_date) ? filters.season : 'Параметры';
+                var filter_btn = $('<span class="fx-nexus-pill selector focusable">' + filter_label + '</span>');
                 filter_btn_wrap.append(filter_btn);
 
                 filter_btn.on('hover:enter', function() { self.showFilterMenu(); });
@@ -86,13 +103,20 @@
 
             this.showFilterMenu = function() {
                 var self = this;
+                var menu = [];
+                
+                if (available_filter_types.seasons) menu.push({ title: 'Сезоны', type: 'season' });
+                if (available_filter_types.qualities) menu.push({ title: 'Качество', type: 'quality' });
+                if (available_filter_types.voices) menu.push({ title: 'Переводы', type: 'voice' });
+
+                if (menu.length === 0) {
+                    Lampa.Noty.show('Дополнительные фильтры недоступны');
+                    return;
+                }
+
                 Lampa.Select.show({
                     title: 'Параметры просмотра',
-                    items: [
-                        { title: 'Сезоны', type: 'season' },
-                        { title: 'Качество', type: 'quality' },
-                        { title: 'Переводы', type: 'voice' }
-                    ],
+                    items: menu,
                     onSelect: function(item) {
                         if(item.type === 'season') self.showSubMenu('Выберите сезон', ['1 сезон', '2 сезон', '3 сезон', '4 сезон', '5 сезон', '6 сезон', '7 сезон'], 'season');
                         if(item.type === 'quality') self.showSubMenu('Качество видео', ['4K', '1080p', '720p', '480p'], 'quality');
@@ -123,20 +147,20 @@
                 var kp_id = object.movie.kinopoisk_id || object.movie.kp_id;
                 var id_param = kp_id ? 'kinopoisk_id=' + kp_id : 'postid=' + object.movie.id;
                 
-                var url = BASE_DOMAIN + '/lite/fxapi?rjson=False&' + id_param + '&s=' + s_num + '&uid=' + WORKING_UID + '&show_token=' + WORKING_TOKEN + '&rchtype=cors';
+                var url = BASE_DOMAIN + '/lite/fxapi?rjson=False&' + id_param + '&s=' + s_num + '&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors';
                 this.load(url, object.movie.title);
             };
 
             this.load = function (url, title) {
                 var self = this;
                 var finalUrl = PROXIES[currentProxyIdx] + url;
-                Lampa.Loading.show();
+                safeLoading.show();
                 container.empty();
                 network.native(finalUrl, function (res) {
-                    Lampa.Loading.hide();
+                    safeLoading.hide();
                     self.build(res, title);
                 }, function (err) {
-                    Lampa.Loading.hide();
+                    safeLoading.hide();
                     self.empty('Ошибка: ' + (err.status || 'Нет данных'));
                 }, false, { dataType: 'text' });
             };
@@ -146,9 +170,13 @@
                 items = [];
                 container.empty();
 
-                // Простой парсер ответа Filmix (текстовый формат)
-                var lines = res.split('\n');
+                var lines = res ? res.split('\n') : [];
                 var found = false;
+
+                // Сбрасываем доступность фильтров перед парсингом нового ответа
+                available_filter_types.seasons = false;
+                available_filter_types.qualities = false;
+                available_filter_types.voices = false;
 
                 lines.forEach(function(line) {
                     if (line.indexOf('#') > -1) {
@@ -158,6 +186,17 @@
                         
                         if (name && link) {
                             found = true;
+                            
+                            // Анализируем содержимое для динамических фильтров
+                            var lowerName = name.toLowerCase();
+                            if (lowerName.indexOf('сезон') > -1 || lowerName.indexOf('season') > -1) available_filter_types.seasons = true;
+                            if (lowerName.indexOf('1080p') > -1 || lowerName.indexOf('720p') > -1 || lowerName.indexOf('4k') > -1) available_filter_types.qualities = true;
+                            // Проверка на популярные студии озвучки
+                            var voiceKeywords = ['lostfilm', 'rezka', 'дубляж', 'coldfilm', 'alexfilm', 'baibako'];
+                            voiceKeywords.forEach(function(kw) {
+                                if (lowerName.indexOf(kw) > -1) available_filter_types.voices = true;
+                            });
+
                             var card = $('<div class="selector focusable" style="padding:15px; margin:5px 25px; background:rgba(255,255,255,0.05); border-radius:8px; display:flex; align-items:center; gap:20px;">' +
                                 '<div style="width:100px; height:60px; background:#222; border-radius:4px; display:flex; align-items:center; justify-content:center; font-weight:bold; color:rgba(255,255,255,0.3)">PLAY</div>' +
                                 '<div style="flex:1;">' +
@@ -177,26 +216,20 @@
                 });
 
                 if (!found) {
-                    // Если ничего не нашли в ответе, создаем заглушку (демо) чтобы интерфейс не был пустым
-                    for(var i=1; i<=8; i++) {
-                        var dummy = $('<div class="selector focusable" style="padding:15px; margin:5px 25px; background:rgba(255,255,255,0.05); border-radius:8px; display:flex; align-items:center; gap:20px;">' +
-                            '<div style="width:100px; height:60px; background:#222; border-radius:4px; display:flex; align-items:center; justify-content:center; font-weight:bold; color:rgba(255,255,255,0.3)">' + i + '</div>' +
-                            '<div><div style="font-size:1.1em; font-weight:bold;">Серия ' + i + ' (' + filters.season + ')</div><div style="opacity:0.5">Ожидание ссылки...</div></div>' +
-                        '</div>');
-                        container.append(dummy);
-                        items.push(dummy);
-                    }
+                    this.empty('Список пуст или сервер не вернул ссылки');
+                } else {
+                    this.start();
                 }
-
-                this.start();
             };
 
             this.empty = function(msg) {
+                container.empty();
                 container.append('<div style="padding:50px; text-align:center; opacity:0.5;">' + msg + '</div>');
                 this.start();
             };
 
             this.start = function () {
+                var self = this;
                 Lampa.Controller.add('fx_nexus_ctrl', {
                     toggle: function () {
                         if(current_mode === 'header') {
@@ -204,7 +237,8 @@
                             Lampa.Controller.collectionFocus(header_items[active_header][0], header);
                         } else {
                             Lampa.Controller.collectionSet(container);
-                            Lampa.Controller.collectionFocus(items[active_item] ? items[active_item][0] : container.find('.selector')[0], container);
+                            var focus_on = items[active_item] ? items[active_item][0] : container.find('.selector')[0];
+                            if (focus_on) Lampa.Controller.collectionFocus(focus_on, container);
                         }
                     },
                     up: function () {
@@ -214,7 +248,12 @@
                         }
                     },
                     down: function () {
-                        if (current_mode === 'header') { current_mode = 'content'; Lampa.Controller.toggle('fx_nexus_ctrl'); } 
+                        if (current_mode === 'header') { 
+                            if (items.length > 0) {
+                                current_mode = 'content'; 
+                                Lampa.Controller.toggle('fx_nexus_ctrl'); 
+                            }
+                        } 
                         else if (active_item < items.length - 1) active_item++;
                     },
                     right: function() {
@@ -235,21 +274,31 @@
             };
 
             this.render = function () { return html; };
-            this.destroy = function () { network.clear(); scroll.destroy(); html.remove(); };
+            this.destroy = function () { 
+                if (network) network.clear(); 
+                if (scroll) scroll.destroy(); 
+                html.remove(); 
+                safeLoading.hide(); 
+            };
         }
 
         Lampa.Component.add('fx_hybrid_v9', FilmixComponent);
 
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complete' || e.type == 'complite') {
-                var render = e.object.activity.render();
-                if (render.find('.fx-nexus-native').length) return;
-                var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Смотреть</span></div>');
-                btn.on('hover:enter', function () {
-                    Lampa.Activity.push({ component: 'fx_hybrid_v9', movie: e.data.movie });
-                });
-                var target = render.find('.view--torrent') || render.find('.full-start__buttons');
-                target.after(btn);
+                try {
+                    var render = e.object.activity.render();
+                    if (render.find('.fx-nexus-native').length) return;
+                    var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Смотреть</span></div>');
+                    btn.on('hover:enter', function () {
+                        Lampa.Activity.push({ component: 'fx_hybrid_v9', movie: e.data.movie });
+                    });
+                    var target = render.find('.view--torrent').length ? render.find('.view--torrent') : render.find('.full-start__buttons');
+                    if (target.length) target.after(btn);
+                    else render.find('.full-start__buttons').append(btn);
+                } catch(err) {
+                    console.error('Filmix Inject Error:', err);
+                }
             }
         });
     }
