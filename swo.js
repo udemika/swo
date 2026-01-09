@@ -2,14 +2,16 @@
     (function () {
         'use strict';
 
-        var VERSION = '1.6.2';
-        var PLUGIN_NAME = 'Filmix Apex';
+        var VERSION = '1.6.3';
+        var PLUGIN_NAME = 'Filmix Direct';
 
         function startPlugin() {
-            if (window.filmix_apex_loaded) return;
-            window.filmix_apex_loaded = true;
+            if (window.filmix_direct_loaded) return;
+            window.filmix_direct_loaded = true;
 
+            // Первый элемент пустой - для прямого запроса
             var PROXIES = [
+                '', 
                 'https://cors.lampa.stream/',
                 'https://cors.kp556.workers.dev:8443/',
                 'https://cors.byskaz.ru/',
@@ -63,7 +65,7 @@
 
                 function extractItems(res) {
                     var found = [];
-                    if (!res) return found;
+                    if (!res || typeof res !== 'string') return found;
                     var wrapper = $('<div>').append(res);
                     
                     wrapper.find('[data-json]').each(function () {
@@ -103,6 +105,8 @@
                     var proxyUrl = PROXIES[currentProxyIdx];
                     loader.show();
 
+                    console.log('Filmix', 'Trying: ' + (proxyUrl || 'DIRECT') + url);
+
                     network.native(proxyUrl + url, function (res) {
                         loader.hide();
                         retry_count = 0;
@@ -111,20 +115,23 @@
                         if (list.length > 0) {
                             self.build(list, title, url);
                         } else {
-                            self.empty('Раздел пуст или не найден');
+                            self.empty('Раздел пуст. Проверьте подписку или доступ.');
                         }
-                    }, function () {
-                        // Ротация прокси при ошибке
+                    }, function (err) {
+                        // Ошибка запроса (таймаут, CORS, 503, 404)
+                        console.log('Filmix', 'Error on: ' + (proxyUrl || 'DIRECT') + '. Status: ' + err.status);
+                        
                         retry_count++;
                         if (retry_count < PROXIES.length) {
+                            // Переключаем на следующий прокси
                             currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
                             self.load(url, title);
                         } else {
                             loader.hide();
                             retry_count = 0;
-                            self.empty('Ошибка сети. Прокси не отвечают.');
+                            self.empty('Все методы (Direct + Proxies) не дали результата. Сервер ShowyPro недоступен.');
                         }
-                    }, false, { dataType: 'text', timeout: 8000 });
+                    }, false, { dataType: 'text', timeout: 6000 });
                 };
 
                 this.build = function (list, title, url) {
@@ -133,7 +140,7 @@
                     items = [];
                     active_item = 0;
 
-                    container.append('<div style="padding:10px 15px; background:rgba(255,255,255,0.03); margin-bottom:10px; border-radius:8px; border-left:4px solid #f59e0b;"><span style="opacity:0.6; font-size:12px; text-transform:uppercase; display:block;">Раздел</span><span style="font-weight:bold; color:#fff;">' + title + '</span></div>');
+                    container.append('<div style="padding:10px 15px; background:rgba(255,255,255,0.03); margin-bottom:10px; border-radius:8px; border-left:4px solid #00d2ff;"><span style="opacity:0.6; font-size:12px; text-transform:uppercase; display:block;">'+(PROXIES[currentProxyIdx] ? 'Через прокси' : 'Прямое соединение')+'</span><span style="font-weight:bold; color:#fff;">' + title + '</span></div>');
 
                     if (history.length > 0) {
                         var back = Lampa.Template.get('fx_nexus_item', { name: '.. Назад', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>', badge: '' });
@@ -174,7 +181,7 @@
                             qualities.push({ title: q, url: item.jd.quality[q] });
                         }
                     } else {
-                        qualities.push({ title: 'По умолчанию', url: item.url });
+                        qualities.push({ title: 'Stream', url: item.url });
                     }
 
                     Lampa.Select.show({
@@ -191,7 +198,7 @@
 
                 this.empty = function (msg) {
                     container.empty();
-                    var errorBtn = $('<div class="selector" style="padding:2em; text-align:center; color:#f59e0b;">' + msg + ' <br><br><span style="font-size:0.8em; opacity:0.6; background:rgba(255,255,255,0.1); padding:0.5em 1em; border-radius:4px;">Нажмите для возврата</span></div>');
+                    var errorBtn = $('<div class="selector" style="padding:2em; text-align:center; color:#00d2ff;">' + msg + ' <br><br><span style="font-size:0.8em; opacity:0.6; background:rgba(255,255,255,0.1); padding:0.5em 1em; border-radius:4px;">Нажмите для возврата</span></div>');
                     errorBtn.on('hover:enter', function () { Lampa.Activity.backward(); });
                     container.append(errorBtn);
                     this.start();
