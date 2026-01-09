@@ -3,11 +3,11 @@
     'use strict';
 
     /**
-     * Filmix Nexus (Full-Series Support) v2.0.0
-     * - Исправлена работа с сериалами (детекция сезонов)
-     * - Сброс озвучки при смене сезона (чтобы не было пустых списков)
-     * - Стабильное появление кнопки перевода
-     * - Полное устранение ошибки component.pause
+     * Filmix Nexus (Series Pro Fix) v2.0.1
+     * - Исправлено появление кнопки озвучки в сериалах
+     * - Добавлена поддержка альтернативных полей перевода (translation/voice)
+     * - Авто-сброс фильтров при смене сезона
+     * - Фикс навигации и component.pause
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -31,11 +31,12 @@
         };
 
         $('<style>\
-            .fx-nexus-header { display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: rgba(0,0,0,0.6); border-bottom: 1px solid rgba(255,255,255,0.05); }\
-            .fx-nexus-pill { background: rgba(255,255,255,0.08); padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; color: #fff; transition: all 0.2s; white-space: nowrap; }\
+            .fx-nexus-header { display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: rgba(0,0,0,0.7); border-bottom: 1px solid rgba(255,255,255,0.08); position: sticky; top: 0; z-index: 10; }\
+            .fx-nexus-pill { background: rgba(255,255,255,0.1); padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; color: #fff; transition: all 0.2s; white-space: nowrap; }\
             .fx-nexus-pill.focus { background: #fff; color: #000; border-color: #fff; transform: scale(1.02); }\
-            .fx-nexus-title { font-size: 0.8em; color: rgba(255,255,255,0.3); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px; }\
-            .fx-card-play { width: 38px; height: 38px; background: #e50914; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }\
+            .fx-nexus-title { font-size: 0.85em; color: rgba(255,255,255,0.4); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; font-weight: 300; }\
+            .fx-card-play { width: 36px; height: 36px; background: #e50914; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 10px rgba(229, 9, 20, 0.3); }\
+            .fx-nexus-component { background: #141414; min-height: 100%; }\
         </style>').appendTo('head');
 
         function FilmixComponent(object) {
@@ -56,7 +57,6 @@
             };
 
             var raw_data = [];
-            // Улучшенная детекция количества сезонов для сериалов
             var total_seasons = object.movie.number_of_seasons || (object.movie.seasons ? object.movie.seasons.length : 0);
 
             this.create = function () {
@@ -71,7 +71,6 @@
                 header.empty();
                 header_items = [];
 
-                // Кнопка сезонов
                 if (total_seasons > 0) {
                     var s_btn = $('<div class="fx-nexus-pill selector focusable">' + filters.season + '</div>');
                     s_btn.on('hover:enter', function() { self.showSeasonMenu(); });
@@ -79,9 +78,9 @@
                     header_items.push(s_btn);
                 }
 
-                // Кнопка озвучки
                 var voices = this.getUniqueVoices();
-                if (voices.length > 1) { 
+                // Показываем кнопку, если есть выбор ИЛИ если уже выбран какой-то перевод
+                if (voices.length > 2 || (voices.length > 1 && filters.voice !== 'Любой')) { 
                     var v_btn = $('<div class="fx-nexus-pill selector focusable">Перевод: ' + filters.voice + '</div>');
                     v_btn.on('hover:enter', function() { self.showVoiceMenu(voices); });
                     header.append(v_btn);
@@ -94,10 +93,9 @@
             this.getUniqueVoices = function() {
                 var v = ['Любой'];
                 raw_data.forEach(function(d) {
-                    if (d.translate) {
-                        var name = d.translate.trim();
-                        if (name && v.indexOf(name) === -1) v.push(name);
-                    }
+                    // Проверка нескольких полей для надежности (для сериалов)
+                    var name = (d.translate || d.translation || d.voice || '').trim();
+                    if (name && v.indexOf(name) === -1) v.push(name);
                 });
                 return v;
             };
@@ -109,11 +107,11 @@
                     menu.push({ title: i + ' сезон', value: i });
                 }
                 Lampa.Select.show({
-                    title: 'Выбор сезона',
+                    title: 'Выберите сезон',
                     items: menu,
                     onSelect: function(item) {
                         filters.season = item.title;
-                        filters.voice = 'Любой'; // Сбрасываем озвучку при смене сезона
+                        filters.voice = 'Любой'; // Сброс при смене сезона обязателен
                         self.loadContent();
                     },
                     onBack: function() { Lampa.Controller.toggle('fx_nexus_ctrl'); }
@@ -123,7 +121,7 @@
             this.showVoiceMenu = function(voices) {
                 var self = this;
                 Lampa.Select.show({
-                    title: 'Выбор озвучки',
+                    title: 'Выберите озвучку',
                     items: voices.map(function(v){ return {title: v, value: v}; }),
                     onSelect: function(item) {
                         filters.voice = item.value;
@@ -146,22 +144,25 @@
                     self.parseData(res);
                 }, function () {
                     safeLoading.hide();
-                    self.empty('Ошибка загрузки. Попробуйте другой прокси в настройках.');
+                    self.empty('Ошибка сети. Проверьте подключение.');
                 }, false, { dataType: 'text' });
             };
 
             this.parseData = function(res) {
-                var self = this;
                 raw_data = [];
                 var $dom = $('<div>' + res + '</div>');
                 $dom.find('.videos__item').each(function() {
                     try {
                         var json = JSON.parse($(this).attr('data-json'));
-                        if (json) raw_data.push(json);
+                        if (json) {
+                            // Нормализация данных для сериалов
+                            if (!json.translate && json.translation) json.translate = json.translation;
+                            raw_data.push(json);
+                        }
                     } catch(e) {}
                 });
                 
-                if (raw_data.length === 0) return this.empty('Ссылки на видео не найдены');
+                if (raw_data.length === 0) return this.empty('Видео файлы не найдены');
                 this.renderList();
             };
 
@@ -174,31 +175,31 @@
                 this.updateHeader();
 
                 raw_data.forEach(function(data) {
-                    if (filters.voice !== 'Любой' && data.translate.trim() !== filters.voice) return;
+                    var voice_name = (data.translate || 'Стандарт').trim();
+                    if (filters.voice !== 'Любой' && voice_name !== filters.voice) return;
 
-                    var title = data.translate || 'Видео файл';
-                    var card = $('<div class="selector focusable" style="padding:15px; margin:6px 20px; background:rgba(255,255,255,0.05); border-radius:10px; display:flex; align-items:center; gap:15px; border:1px solid rgba(255,255,255,0.02);">\
-                        <div class="fx-card-play"><svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>\
+                    var card = $('<div class="selector focusable" style="padding:16px; margin:8px 20px; background:rgba(255,255,255,0.03); border-radius:12px; display:flex; align-items:center; gap:16px; border:1px solid rgba(255,255,255,0.02); transition: transform 0.2s;">\
+                        <div class="fx-card-play"><svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>\
                         <div style="flex:1; overflow:hidden;">\
-                            <div style="font-size:15px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + title + '</div>\
-                            <div style="font-size:11px; opacity:0.4; margin-top:3px;">' + (data.maxquality || 'HD') + '</div>\
+                            <div style="font-size:15px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + voice_name + '</div>\
+                            <div style="font-size:11px; opacity:0.4; margin-top:4px; letter-spacing: 0.5px;">' + (data.maxquality || 'Full HD') + '</div>\
                         </div>\
                     </div>');
 
                     card.on('hover:enter', function() {
-                        Lampa.Player.play({ url: data.url, title: title, movie: object.movie });
+                        Lampa.Player.play({ url: data.url, title: voice_name, movie: object.movie });
                     });
 
                     container.append(card);
                     items.push(card);
                 });
 
-                if (items.length === 0) container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Нет ссылок для выбранных фильтров</div>');
+                if (items.length === 0) container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Нет результатов для этой озвучки</div>');
                 this.start();
             };
 
             this.empty = function(msg) {
-                container.empty().append('<div style="padding:100px 20px; text-align:center; opacity:0.4;">' + msg + '</div>');
+                container.empty().append('<div style="padding:120px 20px; text-align:center; opacity:0.3; font-size:16px;">' + msg + '</div>');
                 this.updateHeader();
                 this.start();
             };
@@ -233,7 +234,13 @@
             this.pause = function () {}; 
             this.stop = function () {};
             this.render = function () { return html; };
-            this.destroy = function () { network.clear(); scroll.destroy(); html.remove(); safeLoading.hide(); };
+            this.destroy = function () { 
+                network.clear(); 
+                scroll.destroy(); 
+                html.remove(); 
+                safeLoading.hide();
+                Lampa.Controller.unregister('fx_nexus_ctrl');
+            };
         }
 
         Lampa.Component.add('fx_hybrid_v9', FilmixComponent);
