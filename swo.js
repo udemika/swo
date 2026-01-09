@@ -1,47 +1,46 @@
 (function () {
     'use strict';
 
-    var VERSION = '1.2.1';
+    var VERSION = '1.2.2';
     var PROXY = 'https://api.allorigins.win/get?url=';
     
-    console.log('Filmix Ultra Injector v' + VERSION + ' started');
+    console.log('Filmix Ultra Injector v' + VERSION + ' - Initializing...');
 
-    // 1. Компонент активности (экран со списком серий/качеств)
+    // 1. Сначала регистрируем компонент в системе Lampa
     function FilmixComponent(object) {
         var network = new (Lampa.Request || Lampa.Reguest)();
         var scroll = new Lampa.Scroll({ mask: true, over: true });
         var files = new Lampa.Explorer(object);
-        var initialized = false;
 
         this.create = function () {
             var self = this;
-            
-            // Подготовка контейнера
             files.appendFiles(scroll.render());
             
-            // Загрузка данных
             var target = 'http://showypro.com/lite/fxapi?rjson=False&postid=' + object.movie.id + '&s=1&uid=i8nqb9vw&showy_token=f8377057-90eb-4d76-93c9-7605952a096l';
             
-            Lampa.Select.show({
-                title: 'Filmix Ultra',
-                items: [{ title: 'Поиск потоков...', wait: true }],
-                onBack: function() { 
-                    network.clear(); 
-                    Lampa.Activity.backward();
-                }
-            });
+            // Открываем селект для визуализации процесса
+            if (Lampa.Select) {
+                Lampa.Select.show({
+                    title: 'Filmix Ultra',
+                    items: [{ title: 'Поиск потоков...', wait: true }],
+                    onBack: function() { 
+                        network.clear(); 
+                        Lampa.Activity.backward();
+                    }
+                });
+            }
 
             network.silent(PROXY + encodeURIComponent(target), function (res) {
-                Lampa.Select.close();
+                if (Lampa.Select) Lampa.Select.close();
                 try {
                     var data = JSON.parse(res.contents);
                     self.build(data);
                 } catch(e) { 
-                    console.error('Filmix Parse Error:', e);
+                    console.error('Filmix Ultra: Parse Error', e);
                     self.empty(); 
                 }
             }, function () {
-                Lampa.Select.close();
+                if (Lampa.Select) Lampa.Select.close();
                 self.empty();
             });
 
@@ -49,7 +48,6 @@
         };
 
         this.build = function (data) {
-            var self = this;
             scroll.clear();
             var links = (data && data.links && data.links.length) ? data.links : [{name: 'Авто-поток 720p', quality: '720p', url: 'https://showypro.com/get_video?id='+object.movie.id+'&q=720&uid=i8nqb9vw'}];
             
@@ -76,14 +74,11 @@
         };
 
         this.empty = function () { 
-            Lampa.Noty.show('Стримы Filmix не найдены');
+            Lampa.Noty.show('Потоки не найдены');
             Lampa.Activity.backward();
         };
 
-        this.render = function() {
-            return files.render();
-        };
-
+        this.render = function() { return files.render(); };
         this.pause = function () {};
         this.stop = function () {};
         this.destroy = function () { 
@@ -93,10 +88,10 @@
         };
     }
 
-    // Регистрация компонента в системе
-    Lampa.Component.add('fx_ultra_comp', FilmixComponent);
+    // Регистрация компонента СТРОГО до его вызова
+    Lampa.Component.add('fx_ultra_v2', FilmixComponent);
 
-    // HTML кнопки из примера пользователя
+    // 2. Логика инжекции кнопки
     var buttonHTML = `
         <div class="full-start__button selector view--online fx-ultra-native" data-subtitle="Ultra v${VERSION}">
             <svg width="135" height="147" viewBox="0 0 135 147" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -107,24 +102,29 @@
         </div>
     `;
 
-    function injectNative(event) {
+    function injectButton(event) {
         $('.fx-ultra-native').remove();
-
         var movie = event.data.movie;
         var render = event.object.activity.render();
         var btn = $(buttonHTML);
 
         btn.on('hover:enter', function() {
-            // Исправленный метод запуска активности
-            Lampa.Activity.push({
-                url: '',
-                title: 'Онлайн - Filmix',
-                component: 'fx_ultra_comp',
-                movie: movie,
-                page: 1
-            });
+            console.log('Filmix Ultra: Button clicked, launching activity...');
+            try {
+                Lampa.Activity.push({
+                    url: '',
+                    title: 'Онлайн - Filmix',
+                    component: 'fx_ultra_v2',
+                    movie: movie,
+                    page: 1
+                });
+            } catch(e) {
+                console.error('Filmix Ultra: Activity push failed', e);
+                Lampa.Noty.show('Ошибка запуска компонента');
+            }
         });
 
+        // Вставка после кнопки торрентов
         var torrentBtn = render.find('.view--torrent');
         if (torrentBtn.length) {
             torrentBtn.after(btn);
@@ -134,10 +134,12 @@
         }
     }
 
+    // Слушатель событий карточки
     Lampa.Listener.follow('full', function (e) {
         if (e.type == 'complete' || e.type == 'complite') {
-            injectNative(e);
+            injectButton(e);
         }
     });
 
+    console.log('Filmix Ultra v' + VERSION + ' - Ready');
 })();
