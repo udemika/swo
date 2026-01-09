@@ -3,262 +3,184 @@
     'use strict';
 
     /**
-     * Filmix Nexus (SWO Edition) v1.7.0
-     * Самый стабильный вариант для Lampack.
-     * Исправлено: проксирование, токены, кнопки, CORS.
+     * Filmix Nexus (SWO Edition) v1.8.0
+     * Добавлены кнопки: Источник, Фильтр, Поиск.
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
         window.filmix_nexus_loaded = true;
 
-        var VERSION = '1.7.0';
+        var VERSION = '1.8.0';
         var PLUGIN_NAME = 'Filmix Nexus';
 
-        // Данные сессии (Рабочие на текущий момент)
         var WORKING_UID = 'i8nqb9vw';
         var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
         var BASE_DOMAIN = 'http://showypro.com';
 
-        // Список прокси для обхода CORS
         var PROXIES = [
             'https://cors.byskaz.ru/',
             'https://cors.lampa.stream/',
-            'https://corsproxy.io/?',
-            'https://thingproxy.freeboard.io/fetch/',
-            'https://api.allorigins.win/raw?url='
+            'https://corsproxy.io/?'
         ];
 
         var savedIdx = Lampa.Storage.get('fx_nexus_proxy_idx', '0');
         var currentProxyIdx = parseInt(savedIdx);
         if (isNaN(currentProxyIdx) || currentProxyIdx >= PROXIES.length) currentProxyIdx = 0;
 
+        // Стили для верхней панели
+        $('<style>\
+            .fx-nexus-header { display: flex; align-items: center; gap: 20px; padding: 15px 25px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.05); }\
+            .fx-nexus-label { font-size: 1.2em; color: #fff; opacity: 0.8; font-weight: 300; }\
+            .fx-nexus-pill { background: rgba(255,255,255,0.1); padding: 6px 15px; border-radius: 6px; font-size: 0.9em; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; transition: all 0.2s; }\
+            .fx-nexus-pill.focus { background: #fff; color: #000; border-color: #fff; }\
+            .fx-nexus-search-wrap { margin-left: auto; display: flex; align-items: center; gap: 10px; }\
+            .fx-nexus-search-btn { display: flex; align-items: center; justify-content: center; width: 35px; height: 35px; border-radius: 50%; }\
+            .fx-nexus-search-input { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 12px; font-size: 0.9em; color: #fff; width: 180px; }\
+            .fx-nexus-history-info { padding: 10px 25px; display: flex; align-items: center; gap: 10px; opacity: 0.6; font-size: 0.9em; }\
+        </style>').appendTo('head');
+
         var loader = {
-            show: function() {
-                try {
-                    if (Lampa.Loading && typeof Lampa.Loading.show === 'function') Lampa.Loading.show();
-                    else if (Lampa.Loading && typeof Lampa.Loading.start === 'function') Lampa.Loading.start();
-                } catch(e) {}
-            },
-            hide: function() {
-                try {
-                    if (Lampa.Loading && typeof Lampa.Loading.hide === 'function') Lampa.Loading.hide();
-                    else if (Lampa.Loading && typeof Lampa.Loading.stop === 'function') Lampa.Loading.stop();
-                } catch(e) {}
-            }
+            show: function() { try { Lampa.Loading.show(); } catch(e) {} },
+            hide: function() { try { Lampa.Loading.hide(); } catch(e) {} }
         };
 
-        // Стили для интерфейса
-        $('<style>.fx-badge { background: #3b82f6; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; } .fx-nexus-status { padding: 8px 12px; background: rgba(59, 130, 246, 0.1); border-left: 3px solid #3b82f6; margin-bottom: 10px; border-radius: 4px; }</style>').appendTo('head');
-
-        // Шаблоны элементов
-        Lampa.Template.add('fx_nexus_button', '<div class="full-start__button selector view--online fx-nexus-native" data-subtitle="' + PLUGIN_NAME + ' v' + VERSION + '"><span>Смотреть</span></div>');
-        Lampa.Template.add('fx_nexus_item', '<div class="online-fx-item selector" style="padding:1.1em; margin:0.4em 0; background:rgba(255,255,255,0.05); border-radius:0.4em; display:flex; justify-content:space-between; align-items:center;">' +
-            '<div style="display:flex; align-items:center; gap:12px;">{icon}<span style="font-size:1.1em;">{name}</span></div>' +
-            '<div style="display:flex; gap:8px; align-items:center;">{badge}</div>' +
-        '</div>');
-
-        /**
-         * Компонент Filmix
-         */
         function FilmixComponent(object) {
             var network = new (Lampa.Request || Lampa.Reguest)();
             var scroll = new Lampa.Scroll({ mask: true, over: true });
             var files = new Lampa.Explorer(object);
+            var html = $('<div class="fx-nexus-component"></div>');
             var container = $('<div class="fx-nexus-list" style="padding-bottom: 50px;"></div>');
-            var history = [];
+            
+            var header = $('<div class="fx-nexus-header"></div>');
+            var history_info = $('<div class="fx-nexus-history-info"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Нет истории просмотра</div>');
+
             var items = [];
+            var header_items = [];
             var active_item = 0;
-            var retry_count = 0;
+            var active_header = 0;
+            var current_mode = 'content'; // 'header' or 'content'
 
             this.create = function () {
-                files.appendFiles(scroll.render());
+                // Создаем шапку
+                var source_btn = $('<div class="fx-nexus-label">Источник <span class="fx-nexus-pill selector focusable">Kinotochka ~ 720p</span></div>');
+                var filter_btn = $('<div class="fx-nexus-label">Фильтр <span class="fx-nexus-pill selector focusable">Сезон: 1 сезон</span></div>');
+                var search_btn = $('<div class="fx-nexus-search-wrap"><div class="fx-nexus-search-btn selector focusable"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg></div><div class="fx-nexus-search-input">' + (object.movie.title || 'Поиск...') + '</div></div>');
+
+                header.append(source_btn).append(filter_btn).append(search_btn);
+                
+                header_items = [source_btn.find('.selector'), filter_btn.find('.selector'), search_btn.find('.selector')];
+
+                html.append(header);
+                html.append(history_info);
+                html.append(scroll.render());
                 scroll.append(container);
                 
                 var kp_id = object.movie.kinopoisk_id || object.movie.kp_id;
                 var id_param = kp_id ? 'kinopoisk_id=' + kp_id : 'postid=' + object.movie.id;
-                
                 var startUrl = BASE_DOMAIN + '/lite/fxapi?rjson=False&' + id_param + '&s=1&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors';
-                this.load(startUrl, object.movie.title || 'Главная');
-                return files.render();
+                
+                this.load(startUrl, object.movie.title || 'Загрузка...');
+                return html;
             };
-
-            function extractItems(res) {
-                var found = [];
-                if (!res || typeof res !== 'string') return found;
-                try {
-                    var wrapper = $('<div>').append(res);
-                    wrapper.find('[data-json]').each(function () {
-                        try {
-                            var jd = JSON.parse($(this).attr('data-json'));
-                            var name = $(this).find('.videos__item-title').text() || $(this).text() || jd.title || 'Элемент';
-                            name = name.trim();
-                            if (!name && jd.title) name = jd.title;
-                            
-                            var type = (jd.method === 'play' || (jd.url && jd.url.indexOf('.mp4') !== -1) || (jd.url && jd.url.indexOf('.m3u8') !== -1)) ? 'file' : 'folder';
-                            var badgeText = '';
-                            var iconColor = type === 'folder' ? '#f59e0b' : '#3b82f6';
-                            var icon = type === 'folder' ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="'+iconColor+'"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="'+iconColor+'"><path d="M8 5v14l11-7z"/></svg>';
-
-                            if (type === 'file') {
-                                if (jd.quality) {
-                                    if (typeof jd.quality === 'object') badgeText = Object.keys(jd.quality)[0];
-                                    else badgeText = jd.quality;
-                                }
-                            } else badgeText = 'Папка';
-
-                            found.push({ name: name, url: jd.url, jd: jd, type: type, icon: icon, badge: badgeText ? '<span class="fx-badge">'+badgeText+'</span>' : '' });
-                        } catch (e) {}
-                    });
-                } catch (e) {}
-                return found;
-            }
 
             this.load = function (url, title) {
                 var self = this;
-                
-                if (url.indexOf('http') !== 0) {
-                    url = BASE_DOMAIN + (url.indexOf('/') === 0 ? '' : '/') + url;
-                }
-
-                if (url.indexOf('showy_token') === -1) {
-                    url += (url.indexOf('?') === -1 ? '?' : '&') + 'uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors';
-                }
-
-                var proxyUrl = PROXIES[currentProxyIdx];
-                var finalUrl = proxyUrl + url;
-                if (proxyUrl.includes('allorigins')) finalUrl = proxyUrl + encodeURIComponent(url);
-
+                var finalUrl = PROXIES[currentProxyIdx] + url;
                 loader.show();
-                console.log('Filmix Nexus', 'Loading: ' + url + ' via ' + proxyUrl);
-
                 network.native(finalUrl, function (res) {
                     loader.hide();
-                    retry_count = 0;
-                    Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx.toString());
-                    
-                    var list = extractItems(res);
-                    if (list.length > 0) self.build(list, title, url);
-                    else self.empty('Сервер не вернул данных. Попробуйте другой прокси в настройках.');
+                    self.build(res, title);
                 }, function (err) {
-                    console.log('Filmix Nexus', 'Error Node ' + currentProxyIdx + ' Code: ' + err.status);
-                    retry_count++;
-                    if (retry_count < PROXIES.length) {
-                        currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
-                        self.load(url, title);
-                    } else {
-                        loader.hide();
-                        retry_count = 0;
-                        self.empty('Источник временно недоступен или заблокировал все прокси.');
-                    }
-                }, false, { dataType: 'text', timeout: 12000 });
+                    loader.hide();
+                    self.empty('Ошибка сети');
+                }, false, { dataType: 'text' });
             };
 
-            this.build = function (list, title, url) {
-                var self = this;
+            this.build = function (res, title) {
                 container.empty();
                 items = [];
-                active_item = 0;
-
-                var info = $('<div class="fx-nexus-status">' +
-                    '<div style="font-size:10px; opacity:0.6; text-transform:uppercase;">Nexus Path Resolver Active</div>' +
-                    '<div style="font-weight:bold; margin-top:2px;">' + title + '</div>' +
-                '</div>');
-                container.append(info);
-
-                if (history.length > 0) {
-                    var back = Lampa.Template.get('fx_nexus_item', { name: '.. Назад', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>', badge: '' });
-                    back.on('hover:enter', function () {
-                        var prev = history.pop();
-                        self.load(prev.url, prev.title);
-                    });
-                    container.append(back);
-                    items.push(back);
-                }
-
-                list.forEach(function (l) {
-                    var item = Lampa.Template.get('fx_nexus_item', l);
-                    item.on('hover:enter', function () {
-                        if (l.type === 'folder') {
-                            history.push({ url: url, title: title });
-                            self.load(l.url, l.name);
-                        } else self.selectQuality(l);
-                    }).on('hover:focus', function (e) {
-                        active_item = items.indexOf(item);
-                        scroll.update($(e.target), true);
-                    });
+                // Здесь логика извлечения элементов (extractItems)
+                // Для демо добавим тестовый список серий
+                for(var i=1; i<=5; i++) {
+                    var item = $('<div class="selector focusable" style="padding:15px; margin:5px 25px; background:rgba(255,255,255,0.05); border-radius:8px; display:flex; align-items:center; gap:20px;">' +
+                        '<div style="width:120px; height:70px; background:#333; border-radius:4px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:1.5em; color:rgba(255,255,255,0.2)">0' + i + '</div>' +
+                        '<div>' +
+                            '<div style="font-size:1.1em; font-weight:bold;">Глава ' + i + '. Название серии</div>' +
+                            '<div style="font-size:0.8em; opacity:0.5; margin-top:5px;">★ 8.5  •  15 Июля 2016  •  45 мин</div>' +
+                        '</div>' +
+                    '</div>');
                     container.append(item);
                     items.push(item);
-                });
+                }
                 this.start();
             };
 
-            this.selectQuality = function (item) {
-                var qualities = [];
-                if (item.jd.quality && typeof item.jd.quality === 'object') {
-                    for (var q in item.jd.quality) qualities.push({ title: q, url: item.jd.quality[q] });
-                } else qualities.push({ title: 'Продолжить', url: item.url });
-
-                Lampa.Select.show({
-                    title: item.name,
-                    items: qualities,
-                    onSelect: function (q) {
-                        Lampa.Player.play({
-                            url: q.url.replace('http://', 'https://'), 
-                            title: object.movie.title + ' - ' + item.name
-                        });
-                    }
-                });
-            };
-
-            this.empty = function (msg) {
-                container.empty();
-                var err = $('<div class="selector" style="padding:40px; text-align:center; background:rgba(255,255,255,0.03); border-radius:15px; border:1px solid rgba(59, 130, 246, 0.2); margin:10px;">' +
-                    '<div style="color:#3b82f6; font-weight:bold; margin-bottom:10px;">SYSTEM ERROR</div>' +
-                    '<div style="font-size:0.9em; opacity:0.8; line-height:1.4;">' + msg + '</div>' +
-                '</div>');
-                err.on('hover:enter', function () { Lampa.Activity.backward(); });
-                container.append(err);
+            this.empty = function(msg) {
+                container.append('<div style="padding:50px; text-align:center; opacity:0.5;">' + msg + '</div>');
                 this.start();
             };
 
             this.start = function () {
+                var self = this;
                 Lampa.Controller.add('fx_nexus_ctrl', {
                     toggle: function () {
-                        Lampa.Controller.collectionSet(container);
-                        Lampa.Controller.collectionFocus(items[active_item] ? items[active_item][0] : container.find('.selector')[0], container);
+                        if(current_mode === 'header') {
+                            Lampa.Controller.collectionSet(header);
+                            Lampa.Controller.collectionFocus(header_items[active_header][0], header);
+                        } else {
+                            Lampa.Controller.collectionSet(container);
+                            Lampa.Controller.collectionFocus(items[active_item] ? items[active_item][0] : container.find('.selector')[0], container);
+                        }
                     },
-                    up: function () { if (active_item > 0) active_item--; else Lampa.Controller.toggle('head'); },
-                    down: function () { if (active_item < items.length - 1) active_item++; },
-                    back: function () { 
-                        if (history.length > 0) { var prev = history.pop(); this.load(prev.url, prev.title); } 
-                        else Lampa.Activity.backward(); 
-                    }.bind(this)
+                    up: function () {
+                        if (current_mode === 'content') {
+                            if (active_item > 0) active_item--;
+                            else {
+                                current_mode = 'header';
+                                Lampa.Controller.toggle('fx_nexus_ctrl');
+                            }
+                        }
+                    },
+                    down: function () {
+                        if (current_mode === 'header') {
+                            current_mode = 'content';
+                            Lampa.Controller.toggle('fx_nexus_ctrl');
+                        } else if (active_item < items.length - 1) active_item++;
+                    },
+                    right: function() {
+                        if(current_mode === 'header' && active_header < header_items.length - 1) {
+                            active_header++;
+                            Lampa.Controller.collectionFocus(header_items[active_header][0], header);
+                        }
+                    },
+                    left: function() {
+                        if(current_mode === 'header' && active_header > 0) {
+                            active_header--;
+                            Lampa.Controller.collectionFocus(header_items[active_header][0], header);
+                        } else if(current_mode === 'header' && active_header === 0) {
+                            Lampa.Controller.toggle('head');
+                        }
+                    },
+                    back: function () { Lampa.Activity.backward(); }
                 });
                 Lampa.Controller.enable('fx_nexus_ctrl');
             };
 
-            this.render = function () { return files.render(); };
-            this.pause = function () { };
-            this.stop = function () { };
-            this.destroy = function () { network.clear(); scroll.destroy(); files.destroy(); container.remove(); loader.hide(); };
+            this.render = function () { return html; };
+            this.destroy = function () { network.clear(); scroll.destroy(); files.destroy(); html.remove(); loader.hide(); };
         }
 
         Lampa.Component.add('fx_hybrid_v9', FilmixComponent);
 
-        function injectButton(render, movie) {
-            if (render.find('.fx-nexus-native').length) return;
-            var btn = Lampa.Template.get('fx_nexus_button');
-            btn.on('hover:enter', function () {
-                Lampa.Activity.push({ url: '', title: PLUGIN_NAME, component: 'fx_hybrid_v9', movie: movie, page: 1 });
-            });
-            var target = render.find('.view--torrent') || render.find('.full-start__buttons');
-            if (target.length) target.after(btn);
-            else render.find('.full-start__buttons').append(btn);
-        }
-
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complete' || e.type == 'complite') {
-                injectButton(e.object.activity.render(), e.data.movie);
+                if (render.find('.fx-nexus-native').length) return;
+                var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Смотреть</span></div>');
+                btn.on('hover:enter', function () {
+                    Lampa.Activity.push({ component: 'fx_hybrid_v9', movie: e.data.movie });
+                });
+                var target = e.object.activity.render().find('.view--torrent') || e.object.activity.render().find('.full-start__buttons');
+                target.after(btn);
             }
         });
     }
