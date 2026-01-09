@@ -1,7 +1,14 @@
 (function () {
     'use strict';
 
-    var VERSION = '1.3.0';
+    var VERSION = '1.3.1';
+    
+    // Защитная проверка среды Lampa
+    if (typeof Lampa === 'undefined') {
+        console.error('Filmix Ultra: Lampa not found');
+        return;
+    }
+
     var PROXIES = [
         'https://cors.lampa.stream/',
         'https://cors.kp556.workers.dev:8443/',
@@ -183,40 +190,51 @@
         };
     }
 
-    Lampa.Component.add('fx_ultra_v8', FilmixComponent);
+    try {
+        Lampa.Component.add('fx_ultra_v8', FilmixComponent);
 
-    function injectButton(event) {
-        $('.fx-ultra-native').remove();
-        var movie = event.data.movie;
-        var render = event.object.activity.render();
-        
-        var btn = $(`
-            <div class="full-start__button selector view--online fx-ultra-native" data-subtitle="Ultra v${VERSION}">
-                <svg width="135" height="147" viewBox="0 0 135 147" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M121.5 96.8823C139.5 86.49 139.5 60.5092 121.5 50.1169L41.25 3.78454C23.25 -6.60776 0.750004 6.38265 0.750001 27.1673L0.75 51.9742C4.70314 35.7475 23.6209 26.8138 39.0547 35.7701L94.8534 68.1505C110.252 77.0864 111.909 97.8693 99.8725 109.369L121.5 96.8823Z" fill="currentColor"/>
-                </svg>
-                <span>Онлайн</span>
-            </div>
-        `);
+        function injectButton(event) {
+            $('.fx-ultra-native').remove();
+            var movie = event.data.movie;
+            var render = event.object.activity.render();
+            
+            var btn = $(`
+                <div class="full-start__button selector view--online fx-ultra-native" data-subtitle="Ultra v${VERSION}">
+                    <svg width="135" height="147" viewBox="0 0 135 147" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M121.5 96.8823C139.5 86.49 139.5 60.5092 121.5 50.1169L41.25 3.78454C23.25 -6.60776 0.750004 6.38265 0.750001 27.1673L0.75 51.9742C4.70314 35.7475 23.6209 26.8138 39.0547 35.7701L94.8534 68.1505C110.252 77.0864 111.909 97.8693 99.8725 109.369L121.5 96.8823Z" fill="currentColor"/>
+                    </svg>
+                    <span>Онлайн</span>
+                </div>
+            `);
 
-        btn.on('hover:enter', function() {
-            Lampa.Activity.push({
-                url: '',
-                title: 'Filmix Ultra',
-                component: 'fx_ultra_v8',
-                movie: movie,
-                page: 1
+            btn.on('hover:enter', function() {
+                Lampa.Activity.push({
+                    url: '',
+                    title: 'Filmix Ultra',
+                    component: 'fx_ultra_v8',
+                    movie: movie,
+                    page: 1
+                });
             });
+
+            var torrentBtn = render.find('.view--torrent');
+            if (torrentBtn.length) torrentBtn.after(btn);
+            else render.find('.full-start__buttons').append(btn);
+        }
+
+        Lampa.Listener.follow('full', function (e) {
+            if (e.type == 'complete' || e.type == 'complite') injectButton(e);
         });
-
-        var torrentBtn = render.find('.view--torrent');
-        if (torrentBtn.length) torrentBtn.after(btn);
-        else render.find('.full-start__buttons').append(btn);
+    } catch(e) {
+        console.error('Filmix Ultra Init Error:', e);
     }
-
-    Lampa.Listener.follow('full', function (e) {
-        if (e.type == 'complete' || e.type == 'complite') injectButton(e);
-    });
 })();
-/* === КОНЕЦ ФАЙЛА FILMIX ULTRA === */
-/* === ЛЮБОЙ ТЕКСТ НИЖЕ ЭТОЙ СТРОКИ ДОЛЖЕН БЫТЬ УДАЛЕН === */
+
+// ############################################################################
+// #                                                                          #
+// #                       !!! КОНЕЦ ФАЙЛА ПЛАГИНА !!!                        #
+// #                                                                          #
+// #  ВСЕ, ЧТО НАХОДИТСЯ НИЖЕ ЭТОЙ ЛИНИИ, ДОЛЖНО БЫТЬ ПУСТЫМ.                 #
+// #  ЕСЛИ ТУТ ЕСТЬ ЛОГИ КОНСОЛИ — УДАЛИТЕ ИХ, ИНАЧЕ ПЛАГИН НЕ ЗАПУСТИТСЯ.     #
+// #                                                                          #
+// ############################################################################
