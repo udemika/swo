@@ -2,68 +2,28 @@
     (function () {
         'use strict';
 
-        var VERSION = '1.6.7';
-        var PLUGIN_NAME = 'Filmix Aegis';
+        var VERSION = '1.6.9';
+        var PLUGIN_NAME = 'Filmix Interceptor';
 
         function startPlugin() {
-            if (window.filmix_aegis_loaded) return;
-            window.filmix_aegis_loaded = true;
+            if (window.filmix_interceptor_loaded) return;
+            window.filmix_interceptor_loaded = true;
+
+            // Проверенные данные сессии
+            var WORKING_UID = 'i8nqb9vw';
+            var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
 
             var PROXIES = [
-                '', 
+                'https://cors.byskaz.ru/',
                 'https://cors.lampa.stream/',
                 'https://corsproxy.io/?',
-                'https://cors.byskaz.ru/',
                 'https://thingproxy.freeboard.io/fetch/',
                 'https://api.allorigins.win/raw?url='
             ];
 
-            var savedIdx = Lampa.Storage.get('fx_aegis_proxy_idx', '0');
+            var savedIdx = Lampa.Storage.get('fx_interceptor_proxy_idx', '0');
             var currentProxyIdx = parseInt(savedIdx);
             if (isNaN(currentProxyIdx) || currentProxyIdx >= PROXIES.length) currentProxyIdx = 0;
-
-            // Функции генерации из предоставленного кода
-            function generateRandomUid() {
-                var chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-                var result = "";
-                for (var i = 0; i < 8; i++) {
-                    result += chars.charAt(Math.floor(Math.random() * chars.length));
-                }
-                return result;
-            }
-
-            function generateAuthToken() {
-                var hexChars = "0123456789abcdef";
-                var endChars = "klmnpqrstuvwxyz"; // Критически важный набор
-                var sections = [8, 4, 4, 4, 12];
-                var result = [];
-                for (var i = 0; i < sections.length; i++) {
-                    var part = "";
-                    var len = sections[i];
-                    if (i === sections.length - 1) {
-                        for (var j = 0; j < len - 1; j++) {
-                            part += hexChars.charAt(Math.floor(Math.random() * hexChars.length));
-                        }
-                        part += endChars.charAt(Math.floor(Math.random() * endChars.length));
-                    } else {
-                        for (var j = 0; j < len; j++) {
-                            part += hexChars.charAt(Math.floor(Math.random() * hexChars.length));
-                        }
-                    }
-                    result.push(part);
-                }
-                return result.join("-");
-            }
-
-            var FXAPI_CACHE_TTL = 10 * 24 * 60 * 60 * 1000;
-            function getCachedValue(key, generator) {
-                var data = Lampa.Storage.get(key, null);
-                var now = Date.now();
-                if (data && data.value && data.expires && data.expires > now) return data.value;
-                var newValue = generator();
-                Lampa.Storage.set(key, { value: newValue, expires: now + FXAPI_CACHE_TTL });
-                return newValue;
-            }
 
             var loader = {
                 show: function() {
@@ -80,9 +40,9 @@
                 }
             };
 
-            $('<style>.fx-item-folder { color: #f59e0b !important; } .fx-item-file { color: #fff !important; } .fx-badge { background: #10b981; color: #000; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; } .fx-aegis-status { padding: 10px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 8px; margin-bottom: 12px; }</style>').appendTo('head');
+            $('<style>.fx-badge { background: #f43f5e; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; } .fx-interceptor-status { padding: 8px 12px; background: rgba(244, 63, 94, 0.1); border-left: 3px solid #f43f5e; margin-bottom: 10px; border-radius: 4px; }</style>').appendTo('head');
 
-            Lampa.Template.add('fx_nexus_button', '<div class="full-start__button selector view--online fx-aegis-native" data-subtitle="' + PLUGIN_NAME + ' v' + VERSION + '"><span>Онлайн</span></div>');
+            Lampa.Template.add('fx_nexus_button', '<div class="full-start__button selector view--online fx-interceptor-native" data-subtitle="' + PLUGIN_NAME + ' v' + VERSION + '"><span>Онлайн</span></div>');
             Lampa.Template.add('fx_nexus_item', '<div class="online-fx-item selector" style="padding:1.1em; margin:0.4em 0; background:rgba(255,255,255,0.05); border-radius:0.4em; display:flex; justify-content:space-between; align-items:center;">' +
                 '<div style="display:flex; align-items:center; gap:12px;">{icon}<span style="font-size:1.1em;">{name}</span></div>' +
                 '<div style="display:flex; gap:8px; align-items:center;">{badge}</div>' +
@@ -92,7 +52,7 @@
                 var network = new (Lampa.Request || Lampa.Reguest)();
                 var scroll = new Lampa.Scroll({ mask: true, over: true });
                 var files = new Lampa.Explorer(object);
-                var container = $('<div class="fx-aegis-list" style="padding-bottom: 50px;"></div>');
+                var container = $('<div class="fx-interceptor-list" style="padding-bottom: 50px;"></div>');
                 var history = [];
                 var items = [];
                 var active_item = 0;
@@ -102,11 +62,13 @@
                     files.appendFiles(scroll.render());
                     scroll.append(container);
                     
-                    var uid = getCachedValue('fx_aegis_uid', generateRandomUid);
-                    var token = getCachedValue('fx_aegis_token', generateAuthToken);
+                    // Перехват ID: приоритет Kinopoisk ID
+                    var kp_id = object.movie.kinopoisk_id || object.movie.kp_id;
+                    var id_param = kp_id ? 'kinopoisk_id=' + kp_id : 'postid=' + object.movie.id;
                     
-                    // Формируем URL согласно логике LampOnline
-                    var startUrl = 'http://showypro.com/lite/fxapi?rjson=False&postid=' + object.movie.id + '&s=1&uid=' + uid + '&showy_token=' + token;
+                    console.log('Filmix Interceptor', 'Target ID: ' + id_param);
+
+                    var startUrl = 'http://showypro.com/lite/fxapi?rjson=False&' + id_param + '&s=1&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors';
                     this.load(startUrl, object.movie.title || 'Главная');
                     return files.render();
                 };
@@ -123,7 +85,7 @@
                                 name = name.trim();
                                 var type = (jd.method === 'play') ? 'file' : 'folder';
                                 var badgeText = '';
-                                var icon = type === 'folder' ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="#f59e0b"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="#10b981"><path d="M8 5v14l11-7z"/></svg>';
+                                var icon = type === 'folder' ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="#f59e0b"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="#f43f5e"><path d="M8 5v14l11-7z"/></svg>';
 
                                 if (type === 'file') {
                                     if (jd.quality) {
@@ -142,22 +104,23 @@
                 this.load = function (url, title) {
                     var self = this;
                     var proxyUrl = PROXIES[currentProxyIdx];
-                    var finalUrl = proxyUrl ? proxyUrl + url : url;
+                    var finalUrl = proxyUrl + url;
                     
                     if (proxyUrl.includes('allorigins')) finalUrl = proxyUrl + encodeURIComponent(url);
 
                     loader.show();
-                    console.log('Filmix Aegis', 'Node ' + currentProxyIdx + ': ' + (proxyUrl || 'DIRECT'));
+                    console.log('Filmix Interceptor', 'Proxy ' + currentProxyIdx + ': ' + proxyUrl);
 
                     network.native(finalUrl, function (res) {
                         loader.hide();
                         retry_count = 0;
-                        Lampa.Storage.set('fx_aegis_proxy_idx', currentProxyIdx.toString());
+                        Lampa.Storage.set('fx_interceptor_proxy_idx', currentProxyIdx.toString());
+                        
                         var list = extractItems(res);
                         if (list.length > 0) self.build(list, title, url);
-                        else self.empty('Ничего не найдено или доступ заблокирован.');
+                        else self.empty('Сервер вернул пустой список. Возможно, контент удален или недоступен для KP-ID.');
                     }, function (err) {
-                        console.log('Filmix Aegis', 'Error on Node ' + currentProxyIdx + ' Status: ' + err.status);
+                        console.log('Filmix Interceptor', 'Node ' + currentProxyIdx + ' failed. Code: ' + err.status);
                         retry_count++;
                         if (retry_count < PROXIES.length) {
                             currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
@@ -165,9 +128,9 @@
                         } else {
                             loader.hide();
                             retry_count = 0;
-                            self.empty('Все узлы (Direct + 5 Proxy) недоступны. Проверьте ваш IP или попробуйте VPN.');
+                            self.empty('Ошибка 503/CORS: Все прокси-узлы отклонили запрос. Проверьте Kinopoisk ID в карточке фильма.');
                         }
-                    }, false, { dataType: 'text', timeout: 8000 });
+                    }, false, { dataType: 'text', timeout: 10000 });
                 };
 
                 this.build = function (list, title, url) {
@@ -176,11 +139,11 @@
                     items = [];
                     active_item = 0;
 
-                    var status = $('<div class="fx-aegis-status">' +
-                        '<div style="font-size:10px; opacity:0.6; text-transform:uppercase;">Подключено через: ' + (PROXIES[currentProxyIdx] || 'Direct Core') + '</div>' +
-                        '<div style="font-weight:bold; margin-top:4px;">' + title + '</div>' +
+                    var info = $('<div class="fx-interceptor-status">' +
+                        '<div style="font-size:10px; opacity:0.6; text-transform:uppercase;">Protocol: KP-ID Interceptor</div>' +
+                        '<div style="font-weight:bold; margin-top:2px;">' + title + '</div>' +
                     '</div>');
-                    container.append(status);
+                    container.append(info);
 
                     if (history.length > 0) {
                         var back = Lampa.Template.get('fx_nexus_item', { name: '.. Назад', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>', badge: '' });
@@ -216,7 +179,7 @@
                     } else qualities.push({ title: 'Stream', url: item.url });
 
                     Lampa.Select.show({
-                        title: 'Качество',
+                        title: 'Выбор потока',
                         items: qualities,
                         onSelect: function (q) {
                             Lampa.Player.play({
@@ -229,9 +192,9 @@
 
                 this.empty = function (msg) {
                     container.empty();
-                    var err = $('<div class="selector" style="padding:30px; text-align:center; background:rgba(0,0,0,0.2); border-radius:12px; margin:10px;">' +
-                        '<div style="color:#10b981; font-weight:bold; margin-bottom:8px;">AEGIS SHIELD</div>' +
-                        '<div style="opacity:0.7; font-size:0.9em;">' + msg + '</div>' +
+                    var err = $('<div class="selector" style="padding:40px; text-align:center; background:rgba(255,255,255,0.03); border-radius:15px; border:1px solid rgba(244, 63, 94, 0.2); margin:10px;">' +
+                        '<div style="color:#f43f5e; font-weight:bold; margin-bottom:10px;">INTERCEPTOR ALERT</div>' +
+                        '<div style="font-size:0.9em; opacity:0.8;">' + msg + '</div>' +
                     '</div>');
                     err.on('hover:enter', function () { Lampa.Activity.backward(); });
                     container.append(err);
@@ -239,7 +202,7 @@
                 };
 
                 this.start = function () {
-                    Lampa.Controller.add('fx_aegis_ctrl', {
+                    Lampa.Controller.add('fx_interceptor_ctrl', {
                         toggle: function () {
                             Lampa.Controller.collectionSet(container);
                             Lampa.Controller.collectionFocus(items[active_item] ? items[active_item][0] : container.find('.selector')[0], container);
@@ -251,7 +214,7 @@
                             else Lampa.Activity.backward(); 
                         }.bind(this)
                     });
-                    Lampa.Controller.enable('fx_aegis_ctrl');
+                    Lampa.Controller.enable('fx_interceptor_ctrl');
                 };
 
                 this.render = function () { return files.render(); };
@@ -263,7 +226,7 @@
             Lampa.Component.add('fx_hybrid_v9', FilmixComponent);
 
             function injectButton(render, movie) {
-                if (render.find('.fx-aegis-native').length) return;
+                if (render.find('.fx-interceptor-native').length) return;
                 var btn = Lampa.Template.get('fx_nexus_button');
                 btn.on('hover:enter', function () {
                     Lampa.Activity.push({ url: '', title: PLUGIN_NAME, component: 'fx_hybrid_v9', movie: movie, page: 1 });
