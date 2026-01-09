@@ -1,9 +1,14 @@
 (function () {
     'use strict';
 
-    console.log('Filmix: Ultimate Plugin v1.1.4 merging started...');
+    // Константы для предотвращения ошибок undefined
+    var EMPTY_URL = 'about:blank';
+    var PLUGIN_NAME = 'Filmix Online';
+    var PLUGIN_VER = '1.1.5';
 
-    // 1. Добавляем стили из референсного файла для красивого отображения
+    console.log('Filmix: Starting v' + PLUGIN_VER + ' for zrovid.com');
+
+    // 1. Стили
     var style = `
         <style>
         .online-prestige{position:relative;border-radius:.3em;background-color:rgba(0,0,0,0.3);display:flex;will-change:transform;margin-top:1em}
@@ -19,25 +24,26 @@
         .full-start__button.btn--filmix{background:#e67e22 !important;color:#fff !important}
         </style>
     `;
-    $('body').append(style);
+    if (!$('style:contains("online-prestige")').length) $('body').append(style);
 
-    // 2. Метаданные
+    // 2. Регистрация плагина с защитой от 404 (добавляем иконку)
     Lampa.Plugins.add({
-        name: 'Filmix Online',
-        version: '1.1.4',
-        description: 'Просмотр Filmix (Ultimate Merge)',
+        name: PLUGIN_NAME,
+        version: PLUGIN_VER,
+        description: 'Просмотр Filmix через ShowyPro API',
         author: 'ShowyPro',
-        help: 'Версия с исправленными ошибками инъекции'
+        icon: EMPTY_URL, // Предотвращает 404 /undefined
+        help: 'Версия адаптированная под zrovid.com'
     });
 
     function FilmixSwo(object) {
         var network = new (Lampa.Request || Lampa.Reguest)();
         var scroll = new Lampa.Scroll({ mask: true, over: true, parent: object.display });
-        var files = new Lampa.Explorer(object);
         
         this.create = function () {
             var self = this;
             var id = object.movie.id;
+            // API ShowyPro
             var url = 'http://showypro.com/lite/fxapi?rjson=False&postid=' + id + '&s=1&uid=i8nqb9vw&showy_token=f8377057-90eb-4d76-93c9-7605952a096l';
 
             Lampa.Select.show({
@@ -59,7 +65,6 @@
         };
 
         this.build = function (data) {
-            var self = this;
             var streams = [];
             try {
                 var json = typeof data === 'string' ? JSON.parse(data) : data;
@@ -68,25 +73,21 @@
                         streams.push({
                             title: item.name || item.title || 'Видео',
                             quality: item.quality || '720p',
-                            url: item.url || item.file,
-                            img: Lampa.TMDB.image('t/p/w300' + object.movie.backdrop_path)
+                            url: item.url || item.file || EMPTY_URL
                         });
                     });
                 }
-            } catch (e) { console.warn('Filmix Parse error', e); }
+            } catch (e) { console.error('Filmix: Data error', e); }
 
             if (streams.length === 0) {
                 streams = [
-                    { title: 'Filmix (Direct): 720p', quality: '720p', url: 'http://showypro.com/get_video?id=' + object.movie.id + '&q=720&uid=i8nqb9vw&token=f8377057-90eb-4d76-93c9-7605952a096l' },
-                    { title: 'Filmix (Direct): 1080p', quality: '1080p', url: 'http://showypro.com/get_video?id=' + object.movie.id + '&q=1080&uid=i8nqb9vw&token=f8377057-90eb-4d76-93c9-7605952a096l' }
+                    { title: 'Filmix 720p', quality: '720p', url: 'http://showypro.com/get_video?id=' + object.movie.id + '&q=720&uid=i8nqb9vw&token=f8377057-90eb-4d76-93c9-7605952a096l' },
+                    { title: 'Filmix 1080p', quality: '1080p', url: 'http://showypro.com/get_video?id=' + object.movie.id + '&q=1080&uid=i8nqb9vw&token=f8377057-90eb-4d76-93c9-7605952a096l' }
                 ];
             }
 
             scroll.clear();
             streams.forEach(function(element, index) {
-                // Защита от ошибок replace/undefined
-                var streamUrl = element.url || "";
-                
                 var html = $(`
                     <div class="online-prestige selector">
                         <div class="online-prestige__img">
@@ -96,22 +97,18 @@
                         <div class="online-prestige__body">
                             <div class="online-prestige__title">${element.title}</div>
                             <div class="online-prestige__info">
-                                <span>Filmix Source</span>
+                                <span>Источник Filmix</span>
                                 <span class="online-prestige__quality">${element.quality}</span>
                             </div>
                         </div>
                     </div>
                 `);
 
-                html.find('img').on('load', function() {
-                    $(this).parent().addClass('online-prestige__img--loaded');
-                });
-
                 html.on('hover:enter', function() {
-                    if (!streamUrl) return Lampa.Noty.show('Ссылка отсутствует');
+                    if (element.url === EMPTY_URL) return Lampa.Noty.show('Ссылка не найдена');
                     Lampa.Player.play({
-                        url: streamUrl,
-                        title: object.movie.title + (element.title ? ' / ' + element.title : '')
+                        url: element.url,
+                        title: object.movie.title + ' (' + element.quality + ')'
                     });
                 }).on('hover:focus', function(e) {
                     scroll.update($(e.target), true);
@@ -124,7 +121,7 @@
         };
 
         this.empty = function () {
-            Lampa.Noty.show('Потоки не найдены. Проверьте подписку ShowyPro.');
+            Lampa.Noty.show('Потоки не найдены.');
         };
 
         this.destroy = function () {
@@ -134,12 +131,12 @@
     }
 
     function startPlugin() {
-        if (window.swo_plugin_loaded) return;
-        window.swo_plugin_loaded = true;
+        if (window.filmix_swo_loaded) return;
+        window.filmix_swo_loaded = true;
 
         Lampa.Component.add('online_fxapi', FilmixSwo);
 
-        // Интеграция в меню "Онлайн"
+        // Кнопка в меню "Онлайн"
         Lampa.Listener.follow('online', function (e) {
             if (e.type == 'before') {
                 e.items.push({
@@ -149,15 +146,16 @@
             }
         });
 
-        // Интеграция в карточку фильма (агрессивная)
+        // Кнопка в карточке (Ultimate Inject)
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complete' || e.type == 'complite') {
-                var tryInject = function(attempts) {
+                var injectTimer = 0;
+                var tryInject = function() {
                     var render = (e.object && e.object.render) ? e.object.render() : 
                                  (e.object && e.object.activity && e.object.activity.render) ? e.object.activity.render() : null;
 
                     if (!render) {
-                        if (attempts > 0) setTimeout(function() { tryInject(attempts - 1); }, 300);
+                        if (injectTimer < 10) { injectTimer++; setTimeout(tryInject, 500); }
                         return;
                     }
 
@@ -171,27 +169,42 @@
                         });
                     });
 
-                    var selectors = ['.full-start__buttons', '.full-movie__buttons', '.full-descr__buttons', '.buttons-list'];
-                    var container = render.find(selectors.join(', '));
+                    // Ищем куда вставить
+                    var containers = ['.full-start__buttons', '.full-movie__buttons', '.full-descr__buttons', '.buttons-list', '.full-movie__main-info'];
+                    var found = false;
                     
-                    if (container.length > 0) {
-                        container.append(button);
-                    } else if (attempts > 0) {
-                        setTimeout(function() { tryInject(attempts - 1); }, 500);
-                    } else {
-                        // Фолбэк в описание
-                        render.find('.full-movie__descr, .full-movie__text').first().before(button);
+                    for (var i = 0; i < containers.length; i++) {
+                        var c = render.find(containers[i]);
+                        if (c.length) {
+                            c.append(button);
+                            found = true;
+                            break;
+                        }
                     }
+
+                    if (!found) {
+                        // Если контейнеры не найдены, ищем любую кнопку и встаем после нее
+                        var anyBtn = render.find('.full-start__button, .selector').first();
+                        if (anyBtn.length) {
+                            anyBtn.after(button);
+                        } else {
+                            render.append(button);
+                        }
+                    }
+                    
+                    // Обновляем контроллер, чтобы кнопка стала кликабельной
+                    if (Lampa.Controller.enabled().name == 'full') Lampa.Controller.enable('full');
                 };
-                tryInject(6);
+                tryInject();
             }
         });
     }
 
+    // Запуск
     if (window.Lampa) startPlugin();
     else {
-        var timer = setInterval(function () {
-            if (window.Lampa) { clearInterval(timer); startPlugin(); }
+        var waitLampa = setInterval(function () {
+            if (window.Lampa) { clearInterval(waitLampa); startPlugin(); }
         }, 100);
     }
 })();
