@@ -2,12 +2,12 @@
     (function () {
         'use strict';
 
-        var VERSION = '1.8.1';
-        var PLUGIN_NAME = 'Filmix Prestige Pure';
+        var VERSION = '1.8.2';
+        var PLUGIN_NAME = 'Filmix Prestige Ultra';
 
         function startPlugin() {
-            if (window.filmix_prestige_pure_loaded) return;
-            window.filmix_prestige_pure_loaded = true;
+            if (window.filmix_prestige_ultra_loaded) return;
+            window.filmix_prestige_ultra_loaded = true;
 
             var WORKING_UID = 'i8nqb9vw';
             var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
@@ -25,7 +25,16 @@
             var currentProxyIdx = parseInt(savedIdx);
             if (isNaN(currentProxyIdx) || currentProxyIdx >= PROXIES.length) currentProxyIdx = 0;
 
-            // Внедряем CSS из референса SHARA
+            // Локализация
+            Lampa.Lang.add({
+                fx_watch_online: {
+                    ru: 'Смотреть Онлайн',
+                    uk: 'Дивитись Онлайн',
+                    en: 'Watch Online'
+                }
+            });
+
+            // CSS
             var css = `
                 .online-prestige{position:relative;border-radius:.3em;background-color:rgba(0,0,0,0.3);display:flex;margin-bottom:1.5em}
                 .online-prestige__body{padding:1.2em;line-height:1.3;flex-grow:1;position:relative}
@@ -33,38 +42,31 @@
                 .online-prestige__img>img{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;border-radius:.3em;opacity:0;transition:opacity .3s}
                 .online-prestige__img--loaded>img{opacity:1}
                 .online-prestige__viewed{position:absolute;top:1em;left:1em;background:rgba(0,0,0,0.45);border-radius:100%;padding:.25em;font-size:.76em}
-                .online-prestige__viewed>svg{width:1.5em!important;height:1.5em!important}
                 .online-prestige__title{font-size:1.6em;font-weight:bold;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical}
                 .online-prestige__info{display:flex;align-items:center;gap:10px;margin-top:10px;opacity:0.6;font-size:0.9em}
                 .online-prestige.focus{background:rgba(255,255,255,0.1);outline: 3px solid #fff; z-index:10}
-                .online-prestige-watched{padding:1em; background:rgba(59,130,246,0.1); border-radius:0.5em; margin-bottom:1.5em; display:flex; align-items:center; gap:15px}
-                .fx-voice-buttons { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:1.5em }
-                .fx-voice-btn { padding:0.6em 1.2em; background:rgba(255,255,255,0.05); border-radius:0.4em; font-size:1.1em; border:1px solid rgba(255,255,255,0.1) }
-                .fx-voice-btn.focus { background:#3b82f6; border-color:#3b82f6 }
+                .fx-pure-native svg { width: 1.8em; height: 1.8em; margin-right: 10px; vertical-align: middle; }
             `;
             $('<style>' + css + '</style>').appendTo('head');
 
             // Шаблоны
-            Lampa.Template.add('fx_prestige_item', `
-                <div class="online-prestige selector">
-                    <div class="online-prestige__img">
-                        <img src="" alt="">
-                    </div>
-                    <div class="online-prestige__body">
-                        <div class="online-prestige__title">{title}</div>
-                        <div class="online-prestige__info">{info}</div>
-                        <div class="fx-item-quality" style="margin-top:8px;">{badge}</div>
-                        <div class="fx-item-timeline" style="margin-top:12px; height:4px; background:rgba(255,255,255,0.1); border-radius:2px; overflow:hidden;">
-                            <div class="fx-progress" style="width:0%; height:100%; background:#3b82f6;"></div>
-                        </div>
-                    </div>
+            var svgIcon = '<svg width="24" height="24" viewBox="0 0 48 48" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M29.3323,25.9072a2.2,2.2,0,0,0,0-3.8144l-5.3172-3.0592,5.4833-2.5569,2.3028,1.3248L39.26,22.0928a2.2,2.2,0,0,1,0,3.8144l-7.4561,4.29-.0017.0014-2.4851,1.43-5.4833-2.5569ZM12.5878,29.29v2.4473a2.2,2.2,0,0,0,3.2965,1.9069l.0009-.0006,2.7034-1.5553,5.4832,2.5569-5.7177,3.29-.0037.0023-7.4157,4.2666a2.2,2.2,0,0,1-3.2976-1.9074V26.9815ZM24.2543,13.46,18.771,16.0165l-2.8856-1.66-.0017-.0009a2.2,2.2,0,0,0-3.2958,1.9082V18.9L7.6371,21.2083V7.7036a2.2,2.2,0,0,1,3.2976-1.9072l7.4186,4.2682.0009,0Z"/></svg>';
+            
+            Lampa.Template.add('fx_nexus_button', `
+                <div class="full-start__button selector view--online fx-pure-native" data-subtitle="${PLUGIN_NAME} v${VERSION}">
+                    ${svgIcon}
+                    <span>#{fx_watch_online}</span>
                 </div>
             `);
 
-            Lampa.Template.add('fx_watched_bar', `
-                <div class="online-prestige-watched">
-                    <div style="color:#3b82f6;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg></div>
-                    <div style="font-size:1.1em;">{text}</div>
+            Lampa.Template.add('fx_prestige_item', `
+                <div class="online-prestige selector">
+                    <div class="online-prestige__img"><img src="" alt=""></div>
+                    <div class="online-prestige__body">
+                        <div class="online-prestige__title">{title}</div>
+                        <div class="online-prestige__info">{info}</div>
+                        <div style="margin-top:8px;">{badge}</div>
+                    </div>
                 </div>
             `);
 
@@ -77,15 +79,12 @@
                 var history = [];
                 var items = [];
                 var active_item = 0;
-                var current_title = '';
 
                 this.create = function () {
                     files.appendFiles(scroll.render());
                     scroll.append(container);
-                    
                     var kp_id = object.movie.kinopoisk_id || object.movie.kp_id;
                     var id_param = kp_id ? 'kinopoisk_id=' + kp_id : 'postid=' + object.movie.id;
-                    
                     var startUrl = BASE_DOMAIN + '/lite/fxapi?rjson=False&' + id_param + '&s=1&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors';
                     this.load(startUrl, object.movie.title || 'Меню');
                     return files.render();
@@ -93,44 +92,36 @@
 
                 this.load = function (url, title) {
                     var self = this;
-                    current_title = title;
-                    
                     if (url.indexOf('http') !== 0) url = BASE_DOMAIN + (url.indexOf('/') === 0 ? '' : '/') + url;
                     if (url.indexOf('showy_token') === -1) url += (url.indexOf('?') === -1 ? '?' : '&') + 'uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors';
 
                     var proxyUrl = PROXIES[currentProxyIdx];
-                    var finalUrl = proxyUrl + url;
-                    if (proxyUrl.includes('allorigins')) finalUrl = proxyUrl + encodeURIComponent(url);
+                    var finalUrl = proxyUrl + (proxyUrl.includes('allorigins') ? encodeURIComponent(url) : url);
 
                     Lampa.Loading.show();
                     network.native(finalUrl, function (res) {
                         Lampa.Loading.hide();
-                        if (!res) return self.empty('Ошибка: Сервер вернул пустой ответ.');
-                        
+                        if (!res || res.trim() === "") {
+                            currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
+                            return self.load(url, title);
+                        }
                         var data = self.parse(res);
-                        
-                        // Auto-entry для одиночных сезонов
                         if (data.items.length === 1 && data.items[0].method === 'link' && history.length === 0) {
                             self.load(data.items[0].url, data.items[0].text);
-                        } else if (data.items.length > 0 || data.buttons.length > 0) {
-                            self.build(data, title, url);
                         } else {
-                            self.empty('В этой папке пока пусто.');
+                            self.build(data, title, url);
                         }
-                    }, function (err) {
+                    }, function () {
                         Lampa.Loading.hide();
-                        // Ротация прокси при ошибке
                         currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
-                        Lampa.Storage.set('fx_prestige_proxy_idx', currentProxyIdx.toString());
-                        self.empty('Ошибка сети. Прокси переключен, попробуйте еще раз.');
-                    }, false, { dataType: 'text', timeout: 15000 });
+                        self.load(url, title);
+                    }, false, { dataType: 'text', timeout: 10000 });
                 };
 
                 this.parse = function (str) {
                     var html = $('<div>' + str + '</div>');
                     var items = [];
                     var buttons = [];
-
                     html.find('.videos__item').each(function () {
                         try {
                             var jd = JSON.parse($(this).attr('data-json'));
@@ -138,7 +129,6 @@
                             items.push(jd);
                         } catch (e) {}
                     });
-
                     html.find('.videos__button').each(function () {
                         try {
                             var jd = JSON.parse($(this).attr('data-json'));
@@ -146,151 +136,58 @@
                             buttons.push(jd);
                         } catch (e) {}
                     });
-
                     return { items: items, buttons: buttons };
                 };
 
                 this.build = function (data, title, url) {
                     var self = this;
-                    container.empty();
-                    items = [];
-                    active_item = 0;
+                    container.empty(); items = []; active_item = 0;
 
-                    // Блок "Последнее просмотренное"
-                    var last_view = Lampa.Storage.get('fx_last_view_' + object.movie.id, false);
-                    if (last_view) {
-                        var watched = Lampa.Template.get('fx_watched_bar', { text: 'Вы остановились на: ' + last_view.name });
-                        container.append(watched);
-                    }
-
-                    // Кнопки перевода
                     if (data.buttons.length > 0) {
-                        var b_cont = $('<div class="fx-voice-buttons"></div>');
+                        var b_cont = $('<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:1.5em"></div>');
                         data.buttons.forEach(function(b) {
-                            var btn = $('<div class="fx-voice-btn selector">' + b.text + '</div>');
+                            var btn = $('<div class="selector" style="padding:0.6em 1.2em; background:rgba(255,255,255,0.05); border-radius:0.4em;">' + b.text + '</div>');
                             btn.on('hover:enter', function() { self.load(b.url, title); });
-                            b_cont.append(btn);
-                            items.push(btn);
+                            b_cont.append(btn); items.push(btn);
                         });
                         container.append(b_cont);
                     }
 
-                    // Кнопка Назад
                     if (history.length > 0) {
-                        var back = $('<div class="online-fx-item selector" style="padding:1em; margin-bottom:10px; background:rgba(255,255,255,0.05); border-radius:0.5em; display:flex; align-items:center; gap:15px;">' +
-                            '<svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg><span>Назад</span></div>');
+                        var back = $('<div class="selector" style="padding:1em; margin-bottom:10px; background:rgba(255,255,255,0.05); border-radius:0.5em;">Назад</div>');
                         back.on('hover:enter', function () {
-                            var prev = history.pop();
-                            self.load(prev.url, prev.title);
+                            var prev = history.pop(); self.load(prev.url, prev.title);
                         });
-                        container.append(back);
-                        items.push(back);
+                        container.append(back); items.push(back);
                     }
 
-                    // Список контента
                     data.items.forEach(function (jd) {
                         var isFile = jd.method === 'play' || (jd.url && (jd.url.indexOf('.mp4') !== -1 || jd.url.indexOf('.m3u8') !== -1));
-                        var info_text = isFile ? 'Видеофайл' : 'Папка / Сезон';
-                        var quality = '';
-                        if (isFile && jd.quality) {
-                            var q = typeof jd.quality === 'object' ? Object.keys(jd.quality)[0] : jd.quality;
-                            quality = '<span style="background:#3b82f6; padding:2px 6px; border-radius:4px; font-size:10px;">' + q + '</span>';
-                        }
-
-                        var item = Lampa.Template.get('fx_prestige_item', { 
-                            title: jd.text, 
-                            info: info_text,
-                            badge: quality
-                        });
-
-                        // Загрузка постера (backdrop)
+                        var quality = (isFile && jd.quality) ? '<span style="background:#3b82f6; padding:2px 6px; border-radius:4px; font-size:10px;">' + (typeof jd.quality === 'object' ? Object.keys(jd.quality)[0] : jd.quality) + '</span>' : '';
+                        
+                        var item = Lampa.Template.get('fx_prestige_item', { title: jd.text, info: isFile ? 'Видео' : 'Папка', badge: quality });
                         var img = item.find('img')[0];
-                        if (object.movie.backdrop_path) {
-                            img.src = Lampa.TMDB.image('t/p/w300' + object.movie.backdrop_path);
-                            img.onload = function() { $(img).parent().addClass('online-prestige__img--loaded'); };
-                        } else {
-                            $(img).parent().hide();
-                        }
-
-                        // Прогресс и отметка "Просмотрено"
-                        var hash = Lampa.Utils.hash(object.movie.id + jd.text);
-                        var viewed = Lampa.Storage.cache('online_view', 5000, []);
-                        if (viewed.indexOf(hash) !== -1) {
-                            item.find('.online-prestige__body').append('<div class="online-prestige__viewed" style="top:10px; right:10px; position:absolute;"><svg width="18" height="18" viewBox="0 0 24 24" fill="#3b82f6"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg></div>');
-                        }
+                        if (object.movie.backdrop_path) img.src = Lampa.TMDB.image('t/p/w300' + object.movie.backdrop_path);
+                        else $(img).parent().hide();
 
                         item.on('hover:enter', function () {
                             if (!isFile) {
                                 history.push({ url: url, title: title });
                                 self.load(jd.url, jd.text);
                             } else {
-                                // Пометка просмотренного
-                                if (viewed.indexOf(hash) === -1) {
-                                    viewed.push(hash);
-                                    Lampa.Storage.set('online_view', viewed);
-                                }
-                                Lampa.Storage.set('fx_last_view_' + object.movie.id, { name: jd.text, url: jd.url });
-                                
-                                self.play(jd, data.items);
+                                var playlist = [];
+                                data.items.forEach(function(it) {
+                                    if (it.method === 'play') playlist.push({ title: it.text, url: it.url.replace('http://', 'https://') });
+                                });
+                                Lampa.Player.play({ url: jd.url.replace('http://', 'https://'), title: object.movie.title + ' - ' + jd.text });
+                                Lampa.Player.playlist(playlist);
                             }
                         }).on('hover:focus', function (e) {
                             active_item = items.indexOf(item);
                             scroll.update($(e.target), true);
-                        }).on('hover:long', function() {
-                            // Контекстное меню как в SHARA
-                            Lampa.Select.show({
-                                title: jd.text,
-                                items: [
-                                    { title: 'Сбросить отметку просмотра', action: 'clear_mark' },
-                                    { title: 'Очистить историю для этого фильма', action: 'clear_history' }
-                                ],
-                                onSelect: function(a) {
-                                    if (a.action === 'clear_mark') {
-                                        Lampa.Arrays.remove(viewed, hash);
-                                        Lampa.Storage.set('online_view', viewed);
-                                        Lampa.Noty.show('Отметка удалена');
-                                    }
-                                    if (a.action === 'clear_history') {
-                                        Lampa.Storage.remove('fx_last_view_' + object.movie.id);
-                                        Lampa.Noty.show('История очищена');
-                                    }
-                                }
-                            });
                         });
-
-                        container.append(item);
-                        items.push(item);
+                        container.append(item); items.push(item);
                     });
-
-                    this.start();
-                };
-
-                this.play = function (current, all) {
-                    var playlist = [];
-                    all.forEach(function(item) {
-                        if (item.method === 'play' || (item.url && item.url.indexOf('.mp4') !== -1)) {
-                            var q_url = item.url;
-                            if (item.quality && typeof item.quality === 'object') {
-                                q_url = item.quality[Object.keys(item.quality)[0]];
-                            }
-                            playlist.push({
-                                title: item.text,
-                                url: q_url.replace('http://', 'https://')
-                            });
-                        }
-                    });
-
-                    var start_index = playlist.findIndex(function(p) { return p.title === current.text; });
-                    
-                    Lampa.Player.play({
-                        url: playlist[start_index].url,
-                        title: object.movie.title + ' - ' + current.text
-                    });
-                    Lampa.Player.playlist(playlist);
-                };
-
-                this.empty = function (msg) {
-                    container.empty().append('<div class="selector" style="padding:60px; text-align:center; opacity:0.6;">' + msg + '</div>');
                     this.start();
                 };
 
@@ -302,10 +199,7 @@
                         },
                         up: function () { if (active_item > 0) active_item--; else Lampa.Controller.toggle('head'); },
                         down: function () { if (active_item < items.length - 1) active_item++; },
-                        back: function () { 
-                            if (history.length > 0) { var prev = history.pop(); this.load(prev.url, prev.title); } 
-                            else Lampa.Activity.backward(); 
-                        }.bind(this)
+                        back: function () { if (history.length > 0) { var prev = history.pop(); this.load(prev.url, prev.title); } else Lampa.Activity.backward(); }.bind(this)
                     });
                     Lampa.Controller.enable('fx_prestige_ctrl');
                 };
@@ -317,17 +211,21 @@
             Lampa.Component.add('fx_hybrid_v9', FilmixComponent);
 
             function injectButton(render, movie) {
-                if (render.find('.fx-prestige-native').length) return;
+                if (render.find('.fx-pure-native').length) return;
                 var btn = Lampa.Template.get('fx_nexus_button');
                 btn.on('hover:enter', function () {
                     Lampa.Activity.push({ url: '', title: PLUGIN_NAME, component: 'fx_hybrid_v9', movie: movie, page: 1 });
                 });
-                var target = render.find('.view--torrent') || render.find('.full-start__buttons');
+                
+                // Пробуем несколько точек вставки
+                var target = render.find('.button--play, .view--torrent, .full-start__buttons').first();
                 if (target.length) target.after(btn);
             }
 
             Lampa.Listener.follow('full', function (e) {
-                if (e.type == 'complete' || e.type == 'complite') injectButton(e.object.activity.render(), e.data.movie);
+                if (e.type == 'complete' || e.type == 'complite') {
+                    injectButton(e.object.activity.render(), e.data.movie);
+                }
             });
         }
 
