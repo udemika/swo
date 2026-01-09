@@ -2,15 +2,15 @@
     (function () {
         'use strict';
 
-        var VERSION = '1.6.6';
-        var PLUGIN_NAME = 'Filmix Titan';
+        var VERSION = '1.6.7';
+        var PLUGIN_NAME = 'Filmix Aegis';
 
         function startPlugin() {
-            if (window.filmix_titan_loaded) return;
-            window.filmix_titan_loaded = true;
+            if (window.filmix_aegis_loaded) return;
+            window.filmix_aegis_loaded = true;
 
             var PROXIES = [
-                '', // Прямой запрос (будет заблокирован в браузере по HTTPS, но сработает в приложении)
+                '', 
                 'https://cors.lampa.stream/',
                 'https://corsproxy.io/?',
                 'https://cors.byskaz.ru/',
@@ -18,9 +18,52 @@
                 'https://api.allorigins.win/raw?url='
             ];
 
-            var savedIdx = Lampa.Storage.get('fx_titan_proxy_idx', '0');
+            var savedIdx = Lampa.Storage.get('fx_aegis_proxy_idx', '0');
             var currentProxyIdx = parseInt(savedIdx);
             if (isNaN(currentProxyIdx) || currentProxyIdx >= PROXIES.length) currentProxyIdx = 0;
+
+            // Функции генерации из предоставленного кода
+            function generateRandomUid() {
+                var chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+                var result = "";
+                for (var i = 0; i < 8; i++) {
+                    result += chars.charAt(Math.floor(Math.random() * chars.length));
+                }
+                return result;
+            }
+
+            function generateAuthToken() {
+                var hexChars = "0123456789abcdef";
+                var endChars = "klmnpqrstuvwxyz"; // Критически важный набор
+                var sections = [8, 4, 4, 4, 12];
+                var result = [];
+                for (var i = 0; i < sections.length; i++) {
+                    var part = "";
+                    var len = sections[i];
+                    if (i === sections.length - 1) {
+                        for (var j = 0; j < len - 1; j++) {
+                            part += hexChars.charAt(Math.floor(Math.random() * hexChars.length));
+                        }
+                        part += endChars.charAt(Math.floor(Math.random() * endChars.length));
+                    } else {
+                        for (var j = 0; j < len; j++) {
+                            part += hexChars.charAt(Math.floor(Math.random() * hexChars.length));
+                        }
+                    }
+                    result.push(part);
+                }
+                return result.join("-");
+            }
+
+            var FXAPI_CACHE_TTL = 10 * 24 * 60 * 60 * 1000;
+            function getCachedValue(key, generator) {
+                var data = Lampa.Storage.get(key, null);
+                var now = Date.now();
+                if (data && data.value && data.expires && data.expires > now) return data.value;
+                var newValue = generator();
+                Lampa.Storage.set(key, { value: newValue, expires: now + FXAPI_CACHE_TTL });
+                return newValue;
+            }
 
             var loader = {
                 show: function() {
@@ -37,9 +80,9 @@
                 }
             };
 
-            $('<style>.fx-item-folder { color: #f59e0b !important; } .fx-item-file { color: #fff !important; } .fx-badge { background: #3b82f6; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; } .fx-status-bar { padding: 8px 12px; background: rgba(0,0,0,0.3); border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #3b82f6; display: flex; flex-direction: column; gap: 2px; }</style>').appendTo('head');
+            $('<style>.fx-item-folder { color: #f59e0b !important; } .fx-item-file { color: #fff !important; } .fx-badge { background: #10b981; color: #000; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; } .fx-aegis-status { padding: 10px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 8px; margin-bottom: 12px; }</style>').appendTo('head');
 
-            Lampa.Template.add('fx_nexus_button', '<div class="full-start__button selector view--online fx-titan-native" data-subtitle="' + PLUGIN_NAME + ' v' + VERSION + '"><span>Онлайн</span></div>');
+            Lampa.Template.add('fx_nexus_button', '<div class="full-start__button selector view--online fx-aegis-native" data-subtitle="' + PLUGIN_NAME + ' v' + VERSION + '"><span>Онлайн</span></div>');
             Lampa.Template.add('fx_nexus_item', '<div class="online-fx-item selector" style="padding:1.1em; margin:0.4em 0; background:rgba(255,255,255,0.05); border-radius:0.4em; display:flex; justify-content:space-between; align-items:center;">' +
                 '<div style="display:flex; align-items:center; gap:12px;">{icon}<span style="font-size:1.1em;">{name}</span></div>' +
                 '<div style="display:flex; gap:8px; align-items:center;">{badge}</div>' +
@@ -49,7 +92,7 @@
                 var network = new (Lampa.Request || Lampa.Reguest)();
                 var scroll = new Lampa.Scroll({ mask: true, over: true });
                 var files = new Lampa.Explorer(object);
-                var container = $('<div class="fx-titan-list" style="padding-bottom: 50px;"></div>');
+                var container = $('<div class="fx-aegis-list" style="padding-bottom: 50px;"></div>');
                 var history = [];
                 var items = [];
                 var active_item = 0;
@@ -58,8 +101,12 @@
                 this.create = function () {
                     files.appendFiles(scroll.render());
                     scroll.append(container);
-                    // Возвращаем HTTP, так как сервер падает при HTTPS запросах (ошибка 521)
-                    var startUrl = 'http://showypro.com/lite/fxapi?rjson=False&postid=' + object.movie.id + '&s=1&uid=i8nqb9vw&showy_token=f8377057-90eb-4d76-93c9-7605952a096l';
+                    
+                    var uid = getCachedValue('fx_aegis_uid', generateRandomUid);
+                    var token = getCachedValue('fx_aegis_token', generateAuthToken);
+                    
+                    // Формируем URL согласно логике LampOnline
+                    var startUrl = 'http://showypro.com/lite/fxapi?rjson=False&postid=' + object.movie.id + '&s=1&uid=' + uid + '&showy_token=' + token;
                     this.load(startUrl, object.movie.title || 'Главная');
                     return files.render();
                 };
@@ -76,7 +123,7 @@
                                 name = name.trim();
                                 var type = (jd.method === 'play') ? 'file' : 'folder';
                                 var badgeText = '';
-                                var icon = type === 'folder' ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="#f59e0b"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="#3b82f6"><path d="M8 5v14l11-7z"/></svg>';
+                                var icon = type === 'folder' ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="#f59e0b"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="#10b981"><path d="M8 5v14l11-7z"/></svg>';
 
                                 if (type === 'file') {
                                     if (jd.quality) {
@@ -95,24 +142,22 @@
                 this.load = function (url, title) {
                     var self = this;
                     var proxyUrl = PROXIES[currentProxyIdx];
-                    // Гарантируем HTTP для API, так как HTTPS вызывает 521
-                    var cleanUrl = url.replace('https://', 'http://');
-                    var finalUrl = proxyUrl ? proxyUrl + cleanUrl : cleanUrl;
+                    var finalUrl = proxyUrl ? proxyUrl + url : url;
                     
-                    if (proxyUrl.includes('allorigins')) finalUrl = proxyUrl + encodeURIComponent(cleanUrl);
+                    if (proxyUrl.includes('allorigins')) finalUrl = proxyUrl + encodeURIComponent(url);
 
                     loader.show();
-                    console.log('Filmix', 'Titan Request: ' + (proxyUrl || 'DIRECT') + ' Protocol: HTTP');
+                    console.log('Filmix Aegis', 'Node ' + currentProxyIdx + ': ' + (proxyUrl || 'DIRECT'));
 
                     network.native(finalUrl, function (res) {
                         loader.hide();
                         retry_count = 0;
-                        Lampa.Storage.set('fx_titan_proxy_idx', currentProxyIdx.toString());
+                        Lampa.Storage.set('fx_aegis_proxy_idx', currentProxyIdx.toString());
                         var list = extractItems(res);
                         if (list.length > 0) self.build(list, title, url);
-                        else self.empty('Ничего не найдено. Попробуйте другой фильм или проверьте баланс Filmix.');
+                        else self.empty('Ничего не найдено или доступ заблокирован.');
                     }, function (err) {
-                        console.log('Filmix', 'Titan Fail: Status ' + err.status + ' on Node ' + currentProxyIdx);
+                        console.log('Filmix Aegis', 'Error on Node ' + currentProxyIdx + ' Status: ' + err.status);
                         retry_count++;
                         if (retry_count < PROXIES.length) {
                             currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
@@ -120,7 +165,7 @@
                         } else {
                             loader.hide();
                             retry_count = 0;
-                            self.empty('Ошибка 521/CORS: Сервер ShowyPro недоступен. Вероятно, технические работы на стороне источника.');
+                            self.empty('Все узлы (Direct + 5 Proxy) недоступны. Проверьте ваш IP или попробуйте VPN.');
                         }
                     }, false, { dataType: 'text', timeout: 8000 });
                 };
@@ -131,11 +176,11 @@
                     items = [];
                     active_item = 0;
 
-                    var statusBar = $('<div class="fx-status-bar">' +
-                        '<span style="opacity:0.6; font-size:10px; text-transform:uppercase;">Узел: ' + (currentProxyIdx === 0 ? 'Direct (Speed)' : 'Proxy Node ' + currentProxyIdx) + '</span>' +
-                        '<span style="font-weight:bold; color:#fff;">' + title + '</span>' +
+                    var status = $('<div class="fx-aegis-status">' +
+                        '<div style="font-size:10px; opacity:0.6; text-transform:uppercase;">Подключено через: ' + (PROXIES[currentProxyIdx] || 'Direct Core') + '</div>' +
+                        '<div style="font-weight:bold; margin-top:4px;">' + title + '</div>' +
                     '</div>');
-                    container.append(statusBar);
+                    container.append(status);
 
                     if (history.length > 0) {
                         var back = Lampa.Template.get('fx_nexus_item', { name: '.. Назад', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>', badge: '' });
@@ -168,14 +213,14 @@
                     var qualities = [];
                     if (item.jd.quality && typeof item.jd.quality === 'object') {
                         for (var q in item.jd.quality) qualities.push({ title: q, url: item.jd.quality[q] });
-                    } else qualities.push({ title: 'По умолчанию', url: item.url });
+                    } else qualities.push({ title: 'Stream', url: item.url });
 
                     Lampa.Select.show({
-                        title: 'Выбор качества',
+                        title: 'Качество',
                         items: qualities,
                         onSelect: function (q) {
                             Lampa.Player.play({
-                                url: q.url.replace('http://', 'https://'), // Стримы лучше играть по https
+                                url: q.url.replace('http://', 'https://'), 
                                 title: object.movie.title + ' - ' + item.name
                             });
                         }
@@ -184,10 +229,9 @@
 
                 this.empty = function (msg) {
                     container.empty();
-                    var err = $('<div class="selector" style="padding:40px; text-align:center; background:rgba(255,255,255,0.03); border-radius:20px; border:1px dashed rgba(255,255,255,0.1); margin:10px;">' +
-                        '<div style="color:#3b82f6; font-size:1.4em; font-weight:bold; margin-bottom:10px;">TITAN ENGINE</div>' +
-                        '<div style="opacity:0.7; font-size:0.9em; margin-bottom:20px;">' + msg + '</div>' +
-                        '<div style="background:#3b82f6; color:#fff; padding:10px; border-radius:8px; display:inline-block; font-size:0.8em;">НАЖМИТЕ BACK ДЛЯ ВЫХОДА</div>' +
+                    var err = $('<div class="selector" style="padding:30px; text-align:center; background:rgba(0,0,0,0.2); border-radius:12px; margin:10px;">' +
+                        '<div style="color:#10b981; font-weight:bold; margin-bottom:8px;">AEGIS SHIELD</div>' +
+                        '<div style="opacity:0.7; font-size:0.9em;">' + msg + '</div>' +
                     '</div>');
                     err.on('hover:enter', function () { Lampa.Activity.backward(); });
                     container.append(err);
@@ -195,7 +239,7 @@
                 };
 
                 this.start = function () {
-                    Lampa.Controller.add('fx_titan_ctrl', {
+                    Lampa.Controller.add('fx_aegis_ctrl', {
                         toggle: function () {
                             Lampa.Controller.collectionSet(container);
                             Lampa.Controller.collectionFocus(items[active_item] ? items[active_item][0] : container.find('.selector')[0], container);
@@ -207,7 +251,7 @@
                             else Lampa.Activity.backward(); 
                         }.bind(this)
                     });
-                    Lampa.Controller.enable('fx_titan_ctrl');
+                    Lampa.Controller.enable('fx_aegis_ctrl');
                 };
 
                 this.render = function () { return files.render(); };
@@ -219,7 +263,7 @@
             Lampa.Component.add('fx_hybrid_v9', FilmixComponent);
 
             function injectButton(render, movie) {
-                if (render.find('.fx-titan-native').length) return;
+                if (render.find('.fx-aegis-native').length) return;
                 var btn = Lampa.Template.get('fx_nexus_button');
                 btn.on('hover:enter', function () {
                     Lampa.Activity.push({ url: '', title: PLUGIN_NAME, component: 'fx_hybrid_v9', movie: movie, page: 1 });
