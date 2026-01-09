@@ -2,23 +2,22 @@
     (function () {
         'use strict';
 
-        var VERSION = '1.6.3';
-        var PLUGIN_NAME = 'Filmix Direct';
+        var VERSION = '1.6.5';
+        var PLUGIN_NAME = 'Filmix Resilient';
 
         function startPlugin() {
-            if (window.filmix_direct_loaded) return;
-            window.filmix_direct_loaded = true;
+            if (window.filmix_resilient_loaded) return;
+            window.filmix_resilient_loaded = true;
 
-            // Первый элемент пустой - для прямого запроса
             var PROXIES = [
-                '', 
+                '', // Прямой запрос
                 'https://cors.lampa.stream/',
-                'https://cors.kp556.workers.dev:8443/',
                 'https://cors.byskaz.ru/',
-                'https://corsproxy.io/?'
+                'https://corsproxy.io/?',
+                'https://api.allorigins.win/raw?url='
             ];
 
-            var savedIdx = Lampa.Storage.get('fx_ultra_proxy_idx', '0');
+            var savedIdx = Lampa.Storage.get('fx_resilient_proxy_idx', '0');
             var currentProxyIdx = parseInt(savedIdx);
             if (isNaN(currentProxyIdx) || currentProxyIdx >= PROXIES.length) currentProxyIdx = 0;
 
@@ -37,9 +36,9 @@
                 }
             };
 
-            $('<style>.fx-item-folder { color: #f59e0b !important; } .fx-item-file { color: #fff !important; } .fx-badge { background: #00d2ff; color: #000; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; }</style>').appendTo('head');
+            $('<style>.fx-item-folder { color: #f59e0b !important; } .fx-item-file { color: #fff !important; } .fx-badge { background: #10b981; color: #000; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; } .fx-error-card { background: rgba(255,0,0,0.1); border: 1px solid rgba(255,0,0,0.3); padding: 20px; border-radius: 10px; text-align: center; margin: 10px; }</style>').appendTo('head');
 
-            Lampa.Template.add('fx_nexus_button', '<div class="full-start__button selector view--online fx-ultra-native" data-subtitle="' + PLUGIN_NAME + ' v' + VERSION + '"><span>Онлайн</span></div>');
+            Lampa.Template.add('fx_nexus_button', '<div class="full-start__button selector view--online fx-resilient-native" data-subtitle="' + PLUGIN_NAME + ' v' + VERSION + '"><span>Онлайн</span></div>');
             Lampa.Template.add('fx_nexus_item', '<div class="online-fx-item selector" style="padding:1.1em; margin:0.4em 0; background:rgba(255,255,255,0.05); border-radius:0.4em; display:flex; justify-content:space-between; align-items:center;">' +
                 '<div style="display:flex; align-items:center; gap:12px;">{icon}<span style="font-size:1.1em;">{name}</span></div>' +
                 '<div style="display:flex; gap:8px; align-items:center;">{badge}</div>' +
@@ -49,7 +48,7 @@
                 var network = new (Lampa.Request || Lampa.Reguest)();
                 var scroll = new Lampa.Scroll({ mask: true, over: true });
                 var files = new Lampa.Explorer(object);
-                var container = $('<div class="fx-ultra-list" style="padding-bottom: 50px;"></div>');
+                var container = $('<div class="fx-resilient-list" style="padding-bottom: 50px;"></div>');
                 var history = [];
                 var items = [];
                 var active_item = 0;
@@ -58,7 +57,7 @@
                 this.create = function () {
                     files.appendFiles(scroll.render());
                     scroll.append(container);
-                    var startUrl = 'http://showypro.com/lite/fxapi?rjson=False&postid=' + object.movie.id + '&s=1&uid=i8nqb9vw&showy_token=f8377057-90eb-4d76-93c9-7605952a096l';
+                    var startUrl = 'https://showypro.com/lite/fxapi?rjson=False&postid=' + object.movie.id + '&s=1&uid=i8nqb9vw&showy_token=f8377057-90eb-4d76-93c9-7605952a096l';
                     this.load(startUrl, object.movie.title || 'Главная');
                     return files.render();
                 };
@@ -66,72 +65,81 @@
                 function extractItems(res) {
                     var found = [];
                     if (!res || typeof res !== 'string') return found;
-                    var wrapper = $('<div>').append(res);
-                    
-                    wrapper.find('[data-json]').each(function () {
-                        try {
-                            var jd = JSON.parse($(this).attr('data-json'));
-                            var name = $(this).find('.videos__item-title').text() || $(this).text() || jd.title || 'Элемент';
-                            name = name.trim();
-                            
-                            var type = (jd.method === 'play') ? 'file' : 'folder';
-                            var badgeText = '';
-                            var icon = type === 'folder' ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="#f59e0b"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="#00d2ff"><path d="M8 5v14l11-7z"/></svg>';
+                    try {
+                        var wrapper = $('<div>').append(res);
+                        wrapper.find('[data-json]').each(function () {
+                            try {
+                                var jd = JSON.parse($(this).attr('data-json'));
+                                var name = $(this).find('.videos__item-title').text() || $(this).text() || jd.title || 'Элемент';
+                                name = name.trim();
+                                
+                                var type = (jd.method === 'play') ? 'file' : 'folder';
+                                var badgeText = '';
+                                var icon = type === 'folder' ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="#f59e0b"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="#10b981"><path d="M8 5v14l11-7z"/></svg>';
 
-                            if (type === 'file') {
-                                if (jd.quality) {
-                                    if (typeof jd.quality === 'object') badgeText = Object.keys(jd.quality)[0];
-                                    else badgeText = jd.quality;
+                                if (type === 'file') {
+                                    if (jd.quality) {
+                                        if (typeof jd.quality === 'object') badgeText = Object.keys(jd.quality)[0];
+                                        else badgeText = jd.quality;
+                                    }
+                                } else {
+                                    badgeText = 'Папка';
                                 }
-                            } else {
-                                badgeText = 'Папка';
-                            }
 
-                            found.push({
-                                name: name,
-                                url: jd.url,
-                                jd: jd,
-                                type: type,
-                                icon: icon,
-                                badge: badgeText ? '<span class="fx-badge" style="'+(type==='folder'?'background:#f59e0b':'')+'">'+badgeText+'</span>' : ''
-                            });
-                        } catch (e) {}
-                    });
+                                found.push({
+                                    name: name,
+                                    url: jd.url,
+                                    jd: jd,
+                                    type: type,
+                                    icon: icon,
+                                    badge: badgeText ? '<span class="fx-badge" style="'+(type==='folder'?'background:#f59e0b':'')+'">'+badgeText+'</span>' : ''
+                                });
+                            } catch (e) {}
+                        });
+                    } catch (e) {
+                        console.log('Filmix', 'Parse Error: ' + e.message);
+                    }
                     return found;
                 }
 
                 this.load = function (url, title) {
                     var self = this;
                     var proxyUrl = PROXIES[currentProxyIdx];
+                    var cleanUrl = url.replace('http://', 'https://'); 
+                    var finalUrl = proxyUrl ? proxyUrl + encodeURIComponent(cleanUrl) : cleanUrl;
+                    
+                    // Если прокси не AllOrigins, не кодируем URL (для обратной совместимости)
+                    if (proxyUrl && !proxyUrl.includes('allorigins')) {
+                        finalUrl = proxyUrl + cleanUrl;
+                    }
+
                     loader.show();
+                    console.log('Filmix', 'Attempt ' + (retry_count + 1) + ': ' + (proxyUrl || 'DIRECT') + ' -> ' + cleanUrl);
 
-                    console.log('Filmix', 'Trying: ' + (proxyUrl || 'DIRECT') + url);
-
-                    network.native(proxyUrl + url, function (res) {
+                    network.native(finalUrl, function (res) {
                         loader.hide();
                         retry_count = 0;
-                        Lampa.Storage.set('fx_ultra_proxy_idx', currentProxyIdx.toString());
+                        Lampa.Storage.set('fx_resilient_proxy_idx', currentProxyIdx.toString());
+                        
                         var list = extractItems(res);
                         if (list.length > 0) {
                             self.build(list, title, url);
                         } else {
-                            self.empty('Раздел пуст. Проверьте подписку или доступ.');
+                            self.empty('Контент не найден. Возможно, требуется VIP подписка Filmix.');
                         }
                     }, function (err) {
-                        // Ошибка запроса (таймаут, CORS, 503, 404)
-                        console.log('Filmix', 'Error on: ' + (proxyUrl || 'DIRECT') + '. Status: ' + err.status);
+                        console.log('Filmix', 'Fail Status: ' + err.status + ' on ' + (proxyUrl || 'DIRECT'));
                         
                         retry_count++;
                         if (retry_count < PROXIES.length) {
-                            // Переключаем на следующий прокси
                             currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
                             self.load(url, title);
                         } else {
                             loader.hide();
                             retry_count = 0;
-                            self.empty('Все методы (Direct + Proxies) не дали результата. Сервер ShowyPro недоступен.');
+                            self.empty('Ошибка: Сервер Filmix недоступен (503/CORS). Попробуйте сменить DNS или использовать VPN.');
                         }
-                    }, false, { dataType: 'text', timeout: 6000 });
+                    }, false, { dataType: 'text', timeout: 10000 });
                 };
 
                 this.build = function (list, title, url) {
@@ -140,7 +148,8 @@
                     items = [];
                     active_item = 0;
 
-                    container.append('<div style="padding:10px 15px; background:rgba(255,255,255,0.03); margin-bottom:10px; border-radius:8px; border-left:4px solid #00d2ff;"><span style="opacity:0.6; font-size:12px; text-transform:uppercase; display:block;">'+(PROXIES[currentProxyIdx] ? 'Через прокси' : 'Прямое соединение')+'</span><span style="font-weight:bold; color:#fff;">' + title + '</span></div>');
+                    var methodLabel = PROXIES[currentProxyIdx] ? 'Node: ' + currentProxyIdx : 'Direct HTTPS';
+                    container.append('<div style="padding:10px 15px; background:rgba(255,255,255,0.03); margin-bottom:10px; border-radius:8px; border-left:4px solid #10b981;"><span style="opacity:0.6; font-size:10px; text-transform:uppercase; display:block;">' + methodLabel + '</span><span style="font-weight:bold; color:#fff; font-size:1.1em;">' + title + '</span></div>');
 
                     if (history.length > 0) {
                         var back = Lampa.Template.get('fx_nexus_item', { name: '.. Назад', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>', badge: '' });
@@ -198,14 +207,18 @@
 
                 this.empty = function (msg) {
                     container.empty();
-                    var errorBtn = $('<div class="selector" style="padding:2em; text-align:center; color:#00d2ff;">' + msg + ' <br><br><span style="font-size:0.8em; opacity:0.6; background:rgba(255,255,255,0.1); padding:0.5em 1em; border-radius:4px;">Нажмите для возврата</span></div>');
-                    errorBtn.on('hover:enter', function () { Lampa.Activity.backward(); });
-                    container.append(errorBtn);
+                    var errorCard = $('<div class="fx-error-card selector">' + 
+                        '<div style="color:#ef4444; font-weight:bold; margin-bottom:10px;">ВНИМАНИЕ</div>' +
+                        '<div style="font-size:0.9em; opacity:0.8;">' + msg + '</div>' + 
+                        '<div style="margin-top:20px; font-size:0.7em; opacity:0.5; text-transform:uppercase;">Нажмите Back для выхода</div>' +
+                    '</div>');
+                    errorCard.on('hover:enter', function () { Lampa.Activity.backward(); });
+                    container.append(errorCard);
                     this.start();
                 };
 
                 this.start = function () {
-                    Lampa.Controller.add('fx_nexus_ctrl', {
+                    Lampa.Controller.add('fx_resilient_ctrl', {
                         toggle: function () {
                             Lampa.Controller.collectionSet(container);
                             Lampa.Controller.collectionFocus(items[active_item] ? items[active_item][0] : container.find('.selector')[0], container);
@@ -219,22 +232,28 @@
                             } else Lampa.Activity.backward(); 
                         }.bind(this)
                     });
-                    Lampa.Controller.enable('fx_nexus_ctrl');
+                    Lampa.Controller.enable('fx_resilient_ctrl');
                 };
 
                 this.render = function () { return files.render(); };
                 this.pause = function () { };
                 this.stop = function () { };
-                this.destroy = function () { network.clear(); scroll.destroy(); files.destroy(); container.remove(); };
+                this.destroy = function () { 
+                    network.clear(); 
+                    scroll.destroy(); 
+                    files.destroy(); 
+                    container.remove(); 
+                    loader.hide(); // Гарантированное скрытие при выходе
+                };
             }
 
-            Lampa.Component.add('fx_ultra_v8', FilmixComponent);
+            Lampa.Component.add('fx_hybrid_v9', FilmixComponent);
 
             function injectButton(render, movie) {
-                if (render.find('.fx-ultra-native').length) return;
+                if (render.find('.fx-resilient-native').length) return;
                 var btn = Lampa.Template.get('fx_nexus_button');
                 btn.on('hover:enter', function () {
-                    Lampa.Activity.push({ url: '', title: PLUGIN_NAME, component: 'fx_ultra_v8', movie: movie, page: 1 });
+                    Lampa.Activity.push({ url: '', title: PLUGIN_NAME, component: 'fx_hybrid_v9', movie: movie, page: 1 });
                 });
                 var target = render.find('.view--torrent');
                 if (!target.length) target = render.find('.full-start__buttons');
