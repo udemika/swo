@@ -2,7 +2,11 @@
     'use strict';
 
     /**
-     * Filmix Nexus (Series Pro Fix) v2.0.4 // Updated to fix episodes not showing after voice selection and remove unregister to avoid error
+     * Filmix Nexus (Series Pro Fix) v2.0.4 – Android TV Compatible
+     * - Добавлена совместимость с пультом на Android TV (навигация arrow keys, enter, back)
+     * - Контроллер 'fx_nexus_ctrl' обрабатывает up/down/back
+     * - Фокус на selector focusable элементах
+     * - Нет unregister для избежания ошибок
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -150,10 +154,11 @@
                 safeLoading.show();
                 network.native(PROXIES[currentProxyIdx] + url, function (res) {
                     safeLoading.hide();
+
                     self.parseData(res);
-                }, function () {
+                }, function() {
                     safeLoading.hide();
-                    self.empty('Ошибка загрузки данных');
+                    self.empty('Ошибка сети при загрузке озвучки');
                 }, false, { dataType: 'text' });
             };
 
@@ -168,7 +173,7 @@
                     try {
                         var json = JSON.parse($(this).attr('data-json'));
                         var name = $(this).text().trim();
-                        if (json && json.method === 'link' && json.url && name) {
+                        if (json?.method === 'link' && json.url && name) {
                             voice_links[name] = json.url;
                         }
                     } catch(e) {}
@@ -269,7 +274,6 @@
                 scroll.destroy(); 
                 html.remove(); 
                 safeLoading.hide();
-                // Removed unregister to avoid TypeError - switch back to default controller instead
                 Lampa.Controller.enable('content');
             };
         }
@@ -295,3 +299,4 @@
 
     if (typeof Lampa !== 'undefined') startPlugin();
 })();
+```
