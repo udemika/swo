@@ -2,10 +2,11 @@
     'use strict';
 
     /**
-     * Filmix Nexus (System UI Fix) v2.5.1
-     * - Исправлен Mixed Content (HTTPS Everywhere)
-     * - Исправлена работа пульта (Native Interaction)
-     * - Исправлен запуск плеера на папках/сезонах
+     * Filmix Nexus (Stability & SSL Fix) v2.5.2
+     * - Исправлена ошибка 526 (Invalid SSL certificate) на showy.online
+     * - Исправлен Mixed Content для IP-прокси
+     * - Авто-ротация при CORS/SSL ошибках
+     * - Системный интерфейс Interaction
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -14,21 +15,30 @@
         var WORKING_UID = 'i8nqb9vw';
         var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
         
-        // Принудительно HTTPS для избежания Mixed Content
+        // Перемещаем проблемный showy.online в конец списка
         var API_MIRRORS = [
             'https://showypro.com',
-            'https://showy.online',
-            'https://showypro.xyz'
+            'https://showypro.xyz',
+            'https://showy.online'
         ];
         
-        var PROXIES = [
+        // Список прокси. Те, что без HTTPS (IP), будут работать только если Lampa открыта по HTTP.
+        // Для HTTPS (zrovid.com) используем только HTTPS прокси.
+        var isHttps = window.location.protocol === 'https:';
+        var ALL_PROXIES = [
+            'https://corsproxy.io/?',
+            'https://cors.lampa.stream/',
             'https://apn5.akter-black.com/',
             'https://apn10.akter-black.com/',
+            'https://cors.byskaz.ru/',
             'http://85.198.110.239:8975/',
-            'http://91.184.245.56:8975/',
-            'https://cors.lampa.stream/',
-            'https://corsproxy.io/?'
+            'http://91.184.245.56:8975/'
         ];
+
+        // Фильтруем прокси под протокол страницы
+        var PROXIES = ALL_PROXIES.filter(function(p) {
+            return !isHttps || p.indexOf('https') === 0;
+        });
 
         var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0'));
         var currentMirrorIdx = parseInt(Lampa.Storage.get('fx_nexus_mirror_idx', '0'));
@@ -38,8 +48,7 @@
             if (url.indexOf('uid=') == -1) url = Lampa.Utils.addUrlComponent(url, 'uid=' + WORKING_UID);
             if (url.indexOf('showy_token=') == -1) url = Lampa.Utils.addUrlComponent(url, 'showy_token=' + WORKING_TOKEN);
             if (url.indexOf('rjson=') == -1) url = Lampa.Utils.addUrlComponent(url, 'rjson=False');
-            // Принудительная замена http на https для API доменов
-            return url.replace('http://showypro.com', 'https://showypro.com');
+            return url;
         }
 
         function toggleLoading(show) {
@@ -73,24 +82,30 @@
 
                 network.native(finalUrl, function (res) {
                     toggleLoading(false);
-                    if (res && res.length > 200) {
-                        if (res.indexOf('521') !== -1 || res.indexOf('down') !== -1) next();
-                        else render(res, movie, lastPath);
-                    } else next();
-                }, function () {
+                    // Проверка на ошибки Cloudflare (526, 521, 403) или CORS заглушки
+                    if (res && res.length > 250 && res.indexOf('Invalid SSL certificate') === -1 && res.indexOf('Error code 526') === -1) {
+                        render(res, movie, lastPath);
+                    } else {
+                        next(); // SSL 526 или пустой ответ -> пробуем следующий узел
+                    }
+                }, function (err) {
                     toggleLoading(false);
-                    next();
-                }, false, { dataType: 'text', timeout: 7000 });
+                    next(); // Ошибка сети/CORS -> пробуем следующий узел
+                }, false, { dataType: 'text', timeout: 6000 });
             };
 
             var next = function() {
-                if (retryCount < (PROXIES.length + 1)) {
+                if (retryCount < (PROXIES.length * API_MIRRORS.length)) {
                     retryCount++;
+                    // Ротация прокси и зеркал
                     currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
+                    if (currentProxyIdx === 0) currentMirrorIdx = (currentMirrorIdx + 1) % API_MIRRORS.length;
+                    
                     Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx);
+                    Lampa.Storage.set('fx_nexus_mirror_idx', currentMirrorIdx);
                     request();
                 } else {
-                    Lampa.Noty.show('Filmix: Ошибка соединения (HTTP 521/CORS)');
+                    Lampa.Noty.show('Filmix: Ошибка узлов (SSL/CORS/526). Попробуйте сменить зеркало в настройках.');
                 }
             };
 
@@ -101,13 +116,11 @@
             var $dom = $('<div>' + res + '</div>');
             var items = [], filters = [];
 
-            // Собираем всё содержимое
             $dom.find('.selector[data-json]').each(function() {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
                     var title = $(this).text().trim() || json.title || 'Видео';
                     
-                    // Если это ссылка на раздел (сезон/перевод), а не поток
                     if (json.link || (json.url && json.url.indexOf('fxapi') > -1 && !json.play)) {
                         filters.push({ title: title, url: json.url });
                     } else {
@@ -128,8 +141,8 @@
                 });
 
                 interaction.onPlay = function(item) {
-                    // Страховка: если по ошибке в список попал API URL
-                    if (item.url.indexOf('fxapi') > -1 && item.url.indexOf('showy_token') > -1 && item.url.indexOf('.mp4') === -1 && item.url.indexOf('.m3u8') === -1) {
+                    // Если это не прямая ссылка на видео (m3u8/mp4), а API URL - грузим дальше
+                    if (item.url.indexOf('fxapi') > -1 && item.url.indexOf('.mp4') === -1 && item.url.indexOf('.m3u8') === -1) {
                          var path = item.url.split('fxapi')[1] || '';
                          loadFilmix(movie, '/lite/fxapi' + path);
                          return;
@@ -139,7 +152,7 @@
 
                 interaction.onFilter = function() {
                     Lampa.Select.show({
-                        title: 'Сезоны / Переводы',
+                        title: 'Выбор раздела',
                         items: filters.map(function(f) { return { title: f.title, value: f.url }; }),
                         onSelect: function(item) {
                             var path = item.value.split('fxapi')[1] || '';
@@ -173,9 +186,9 @@
                 if (!renderActivity) return;
 
                 var inject = function() {
-                    if (renderActivity.find('.fx-nexus-v12').length) return;
+                    if (renderActivity.find('.fx-nexus-v13').length) return;
 
-                    var btn = $('<div class="full-start__button selector view--online fx-nexus-v12"><span>Смотреть Filmix</span></div>');
+                    var btn = $('<div class="full-start__button selector view--online fx-nexus-v13"><span>Смотреть Filmix</span></div>');
                     btn.on('hover:enter', function () {
                         loadFilmix(e.data.movie);
                     });
@@ -183,7 +196,7 @@
                     var container = renderActivity.find('.full-start__buttons, .full-start__actions, .full-start__left, .full-start').first();
                     var existingBtn = renderActivity.find('.full-start__button, .selector').first();
 
-                    if (existingBtn.length && !existingBtn.hasClass('fx-nexus-v12')) existingBtn.before(btn);
+                    if (existingBtn.length && !existingBtn.hasClass('fx-nexus-v13')) existingBtn.before(btn);
                     else if (container.length) container.prepend(btn);
 
                     if (Lampa.Controller.toggle) Lampa.Controller.toggle('full_start');
