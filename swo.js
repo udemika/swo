@@ -5,7 +5,8 @@
      * Filmix Nexus (Series Pro Fix) v2.1.0 – Android TV + Озвучки
      * - Кнопка "Смотреть" как в on.js
      * - Полный парсинг озвучек/сезонов/серий как в swo.js
-     * - Совместимость с пультом (up/down/back/enter)
+     * - Совместимость с пультом (up/down/left/right/enter/back)
+     * - Нет unregister для избежания ошибок
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -234,6 +235,12 @@
                     down: () => {
                         if (current_mode === 'header' && items.length) current_mode = 'content', Lampa.Controller.toggle('fx_nexus_ctrl');
                         else if (active_item < items.length - 1) active_item++;
+                    },
+                    left: () => {
+                        if (current_mode === 'content' && active_item > 0) active_item--;
+                    },
+                    right: () => {
+                        if (current_mode === 'content' && active_item < items.length - 1) active_item++;
                     },
                     back: () => Lampa.Activity.backward()
                 });
