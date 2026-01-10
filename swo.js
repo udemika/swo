@@ -2,10 +2,10 @@
     'use strict';
 
     /**
-     * Filmix Nexus (Robust Native) v2.3.2
-     * - Исправлено появление кнопки "Смотреть" (используется логика из примера)
-     * - Нативный интерфейс Lampa.Interaction
-     * - Совместимость со всеми скинами Лампы
+     * Filmix Nexus (Universal) v2.3.3
+     * - Исправлены ошибки Loading.show и component.start
+     * - Полная совместимость с форками (zrovid, lampac и др.)
+     * - Нативный интерфейс Interaction
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -31,93 +31,96 @@
             return url;
         }
 
-        function FilmixComponent(object) {
-            var network = new (Lampa.Request || Lampa.Reguest)();
-            var interaction;
-            var html = $('<div></div>');
-            
-            this.create = function () {
-                var id = object.movie.kinopoisk_id || object.movie.kp_id || object.movie.id;
-                var url = BASE_DOMAIN + '/lite/fxapi?kinopoisk_id=' + id;
-                if (!object.movie.kinopoisk_id && !object.movie.kp_id) url = BASE_DOMAIN + '/lite/fxapi?postid=' + id;
-                this.load(sign(url));
-                return html;
-            };
+        // Универсальный индикатор загрузки
+        function toggleLoading(show) {
+            try {
+                if (typeof Lampa.Loading === 'function') {
+                    Lampa.Loading(show);
+                } else if (Lampa.Loading) {
+                    if (show && Lampa.Loading.show) Lampa.Loading.show();
+                    else if (!show && Lampa.Loading.hide) Lampa.Loading.hide();
+                }
+            } catch (e) {
+                console.log('Filmix: Loading helper error', e);
+            }
+        }
 
-            this.load = function (url) {
-                var self = this;
-                Lampa.Loading.show();
-                network.native(PROXIES[currentProxyIdx] + url, function (res) {
-                    Lampa.Loading.hide();
-                    self.display(res, url);
+        function loadFilmix(movie) {
+            var network = new (Lampa.Request || Lampa.Reguest)();
+            var id = movie.kinopoisk_id || movie.kp_id || movie.id;
+            var url = BASE_DOMAIN + '/lite/fxapi?kinopoisk_id=' + id;
+            if (!movie.kinopoisk_id && !movie.kp_id) url = BASE_DOMAIN + '/lite/fxapi?postid=' + id;
+
+            var fetch = function(targetUrl) {
+                toggleLoading(true);
+                network.native(PROXIES[currentProxyIdx] + sign(targetUrl), function (res) {
+                    toggleLoading(false);
+                    displayFilmix(res, movie, fetch);
                 }, function () {
-                    Lampa.Loading.hide();
-                    Lampa.Noty.show('Ошибка Filmix');
+                    toggleLoading(false);
+                    Lampa.Noty.show('Ошибка соединения с Filmix');
                 }, false, { dataType: 'text' });
             };
 
-            this.display = function (res, current_url) {
-                var self = this;
-                var $dom = $('<div>' + res + '</div>');
-                var items = [], filters = [];
-
-                $dom.find('.videos__button, .selector[data-json*="link"]').each(function() {
-                    try {
-                        var json = JSON.parse($(this).attr('data-json'));
-                        filters.push({ title: $(this).text().trim(), url: json.url });
-                    } catch(e) {}
-                });
-
-                $dom.find('.videos__item, .selector[data-json*="play"]').each(function() {
-                    try {
-                        var json = JSON.parse($(this).attr('data-json'));
-                        items.push({
-                            title: $(this).find('.videos__item-title').text().trim() || json.title || 'Видео',
-                            quality: json.maxquality || 'HD',
-                            url: sign(json.url)
-                        });
-                    } catch(e) {}
-                });
-
-                if (!interaction) {
-                    interaction = new Lampa.Interaction({
-                        card: object.movie,
-                        filter: filters.length > 0
-                    });
-
-                    interaction.onPlay = function(item) {
-                        Lampa.Player.play({ url: item.url, title: item.title, movie: object.movie });
-                    };
-
-                    interaction.onFilter = function() {
-                        Lampa.Select.show({
-                            title: 'Выбор',
-                            items: filters.map(function(f) { return { title: f.title, value: f.url }; }),
-                            onSelect: function(item) { self.load(sign(item.value)); }
-                        });
-                    };
-
-                    Lampa.Activity.push({
-                        component: 'interaction',
-                        title: 'Filmix',
-                        object: interaction,
-                        onBack: function(){ Lampa.Activity.backward(); }
-                    });
-                }
-                interaction.content(items);
-            };
-
-            this.render = function() { return html; };
-            this.destroy = function () { 
-                network.clear(); 
-                if (interaction && interaction.destroy) interaction.destroy();
-                html.remove();
-            };
+            fetch(url);
         }
 
-        Lampa.Component.add('fx_hybrid_v9', FilmixComponent);
+        function displayFilmix(res, movie, fetchCallback) {
+            var $dom = $('<div>' + res + '</div>');
+            var items = [], filters = [];
 
-        // Улучшенная логика вставки кнопки (по аналогии с вашим примером)
+            // Собираем фильтры
+            $dom.find('.videos__button, .selector[data-json*="link"]').each(function() {
+                try {
+                    var json = JSON.parse($(this).attr('data-json'));
+                    filters.push({ title: $(this).text().trim(), url: json.url });
+                } catch(e) {}
+            });
+
+            // Собираем серии
+            $dom.find('.videos__item, .selector[data-json*="play"]').each(function() {
+                try {
+                    var json = JSON.parse($(this).attr('data-json'));
+                    items.push({
+                        title: $(this).find('.videos__item-title').text().trim() || json.title || 'Видео',
+                        quality: json.maxquality || 'HD',
+                        url: sign(json.url)
+                    });
+                } catch(e) {}
+            });
+
+            var interaction = new Lampa.Interaction({
+                card: movie,
+                filter: filters.length > 0
+            });
+
+            interaction.onPlay = function(item) {
+                Lampa.Player.play({ url: item.url, title: item.title, movie: movie });
+            };
+
+            interaction.onFilter = function() {
+                Lampa.Select.show({
+                    title: 'Выбор озвучки/сезона',
+                    items: filters.map(function(f) { return { title: f.title, value: f.url }; }),
+                    onSelect: function(item) {
+                        fetchCallback(item.value);
+                    },
+                    onBack: function() {
+                        Lampa.Controller.toggle('interaction');
+                    }
+                });
+            };
+
+            Lampa.Activity.push({
+                component: 'interaction',
+                title: 'Filmix',
+                object: interaction,
+                onBack: function() { Lampa.Activity.backward(); }
+            });
+
+            interaction.content(items);
+        }
+
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complete' || e.type == 'complite') {
                 var render = e.object.activity.render();
@@ -128,29 +131,20 @@
 
                     var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Смотреть Filmix</span></div>');
                     btn.on('hover:enter', function () {
-                        Lampa.Activity.push({ component: 'fx_hybrid_v9', movie: e.data.movie });
+                        loadFilmix(e.data.movie);
                     });
 
-                    // Ищем куда вставить (как в вашем примере: перед или вместо существующих)
                     var container = render.find('.full-start__buttons, .full-start__actions, .full-start');
                     var watchBtn = render.find('.watch-button, .full-start__button').first();
 
-                    if (watchBtn.length) {
-                        // Вставляем ПЕРЕД оригинальной кнопкой "Смотреть"
-                        watchBtn.before(btn);
-                    } else if (container.length) {
-                        // Или просто в начало контейнера
-                        container.prepend(btn);
-                    }
+                    if (watchBtn.length) watchBtn.before(btn);
+                    else if (container.length) container.prepend(btn);
 
-                    // Обновляем контроллер, чтобы кнопка стала фокусной
-                    Lampa.Controller.toggle('full_start');
+                    if (Lampa.Controller.toggle) Lampa.Controller.toggle('full_start');
                 };
 
-                // Делаем несколько попыток, если DOM еще не готов
                 inject();
-                setTimeout(inject, 100);
-                setTimeout(inject, 500);
+                setTimeout(inject, 200);
             }
         });
     }
