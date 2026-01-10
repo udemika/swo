@@ -2,11 +2,11 @@
     'use strict';
 
     /**
-     * Filmix Nexus (Series Pro Fix) v2.0.8
-     * - Реализована логика автоматического перехода по кнопкам озвучек (как в Lampac)
-     * - Исправлено "пустое окно" при выборе перевода
-     * - Улучшен парсинг комбинированных ответов (кнопки + серии)
-     * - Полная поддержка сессионных параметров в account()
+     * Filmix Nexus (Series Pro Fix) v2.0.9
+     * - Имитация поведения оригинального Lampac для работы с кнопками озвучек
+     * - Исправлен баг, когда список серий не обновлялся при смене перевода
+     * - Добавлен принудительный переход по ссылке кнопки (method: link), если она не активна
+     * - Улучшен парсинг названий озвучек (удаление лишних пробелов и спецсимволов)
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -212,7 +212,7 @@
                     self.parseData(res, !!custom_url);
                 }, function () {
                     safeLoading.hide();
-                    self.empty('Ошибка сети. Проверьте подключение или смените прокси.');
+                    self.empty('Ошибка сети. Попробуйте сменить прокси в шапке Lampac.');
                 }, false, { dataType: 'text' });
             };
 
@@ -221,14 +221,18 @@
                 raw_data = [];
                 var $dom = $('<div>' + res + '</div>');
                 
-                var buttons = [];
+                var found_buttons = [];
                 $dom.find('.videos__button, .videos__item[data-json*="link"]').each(function() {
                     try {
                         var json = JSON.parse($(this).attr('data-json'));
                         var name = $(this).text().trim() || json.title || json.text;
                         if (json && (json.method === 'link' || json.method === 'playlist') && json.url && name) {
                             voice_links[name] = json.url;
-                            buttons.push({ name: name, url: json.url, active: $(this).hasClass('active') || $(this).hasClass('focused') });
+                            found_buttons.push({
+                                name: name,
+                                url: json.url,
+                                active: $(this).hasClass('active') || $(this).hasClass('focused') || $(this).hasClass('videos__button--active')
+                            });
                         }
                     } catch(e) {}
                 });
@@ -237,7 +241,6 @@
                     try {
                         var json = JSON.parse($(this).attr('data-json'));
                         if (json && (json.method === 'play' || json.url)) {
-                            // Если мы в под-запросе, присваиваем имя озвучки всем сериям
                             if (is_subview && filters.voice !== 'Любой') {
                                 json.translate = filters.voice;
                             }
@@ -249,19 +252,19 @@
                     } catch(e) {}
                 });
                 
-                // ЛОГИКА СЛЕДОВАНИЯ ЗА ВЫБОРОМ (как в Lampac)
+                // РЕКУРСИВНЫЙ ПЕРЕХОД ПО КНОПКАМ ОЗВУЧЕК
                 if (filters.voice !== 'Любой') {
-                    var target_btn = buttons.find(function(b) { return b.name === filters.voice; });
-                    // Если нашли кнопку нашей озвучки и она НЕ активна - переходим по ней
-                    if (target_btn && !target_btn.active) {
-                        filters.voice_url = target_btn.url;
-                        this.loadContent(target_btn.url);
+                    var match = found_buttons.find(function(b) { return b.name === filters.voice; });
+                    // Если кнопка найдена, но она не была активной в этом ответе - переходим по ее ссылке
+                    if (match && !match.active) {
+                        filters.voice_url = match.url;
+                        this.loadContent(match.url);
                         return;
                     }
                 }
 
-                if (raw_data.length === 0 && buttons.length === 0) {
-                    this.empty('Контент не найден');
+                if (raw_data.length === 0 && found_buttons.length === 0) {
+                    this.empty('Контент не найден или заблокирован');
                 } else {
                     this.renderList();
                 }
@@ -278,7 +281,7 @@
                 raw_data.forEach(function(data) {
                     var voice_name = (data.translate || data.translation || 'Стандарт').trim();
                     
-                    // Фильтруем только если мы НЕ находимся внутри конкретной папки озвучки
+                    // Если мы НЕ в режиме subview по прямой ссылке, фильтруем по имени
                     if (!filters.voice_url && filters.voice !== 'Любой' && voice_name !== filters.voice) {
                         return;
                     }
@@ -301,7 +304,7 @@
                 });
 
                 if (items.length === 0) {
-                    container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Выберите подходящую озвучку в меню</div>');
+                    container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Для отображения серий выберите озвучку из списка выше</div>');
                 }
                 
                 this.start();
