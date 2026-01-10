@@ -16,9 +16,12 @@
         var BASE_DOMAIN = 'http://showypro.com';
         
         var PROXIES = [
+            'https://cors.nb557.workers.dev/',  
             'https://cors.byskaz.ru/',
-            'https://cors.lampa.stream/',
-            'https://corsproxy.io/?'
+            'https://apn10.akter-black.com/',  
+            'http://85.198.110.239:8975//',
+            'https://apn5.akter-black.com/',
+            'http://91.184.245.56:8975/?'
         ];
 
         var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0'));
