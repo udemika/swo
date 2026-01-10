@@ -130,7 +130,7 @@
                         filters.voice = item.value;
                         if (voice_links[item.value]) {
                             filters.voice_url = voice_links[item.value];
-                            self.loadVoicesOrEpisodes(filters.voice_url);
+                            self.loadContent(filters.voice_url); // Возвращаем к оригинальной loadContent с custom_url
                         } else {
                             filters.voice_url = '';
                             self.renderList();
@@ -140,77 +140,64 @@
                 });
             };
 
-            this.loadContent = function() {
+            this.loadContent = function(custom_url) {
+                var self = this;
                 var s_num = (filters.season.match(/\d+/) || [1])[0];
                 var kp_id = object.movie.kinopoisk_id || object.movie.kp_id;
                 var id_param = kp_id ? 'kinopoisk_id=' + kp_id : 'postid=' + object.movie.id;
                 
-                var url = BASE_DOMAIN + '/lite/fxapi?rjson=False&' + id_param + '&s=' + s_num + '&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors';
+                var url = custom_url || (BASE_DOMAIN + '/lite/fxapi?rjson=False&' + id_param + '&s=' + s_num + '&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors');
                 
                 // Исправляем URL если это не полный путь
                 if (url.indexOf('http') !== 0) url = BASE_DOMAIN + (url.indexOf('/') === 0 ? '' : '/') + url;
 
-                this.loadVoicesOrEpisodes(url);
+                safeLoading.show();
+                network.native(PROXIES[currentProxyIdx] + url, function (res) {
+                    safeLoading.hide();
+                    self.parseData(res);
+                }, function () {
+                    safeLoading.hide();
+                    self.empty('Ошибка загрузки данных');
+                }, false, { dataType: 'text' });
             };
 
-            this.loadVoicesOrEpisodes = function(url, depth = 0) {
-                var self = this;
-                if (depth > 3) return this.empty('Слишком много уровней выбора озвучки');
+            this.parseData = function(res) {
+                raw_data = [];
+                voice_links = {}; // Чистим перед парсингом
 
-                safeLoading.show();
-                network.native(PROXIES[currentProxyIdx] + url, function(res) {
-                    safeLoading.hide();
-
-                    raw_data = [];
-                    voice_links = {};
-
-                    var $dom = $('<div>' + res + '</div>');
-
-                    // 1. Пытаемся найти серии
-                    var episodesFound = false;
-                    $dom.find('.videos__item').each(function() {
-                        try {
-                            var json = JSON.parse($(this).attr('data-json'));
-                            if (json && json.method === 'play') {
-                                raw_data.push(json);
-                                episodesFound = true;
-                            }
-                        } catch(e) {}
-                    });
-
-                    // 2. Если серий нет — ищем кнопки озвучки
-                    if (!episodesFound) {
-                        $dom.find('.videos__button').each(function() {
-                            try {
-                                var json = JSON.parse($(this).attr('data-json'));
-                                var name = $(this).text().trim();
-                                if (json?.method === 'link' && json.url && name) {
-                                    voice_links[name] = json.url;
-                                }
-                            } catch(e) {}
-                        });
-
-                        var voices = self.getAvailableVoices();
-                        if (voices.length > 1) {
-                            // Автоматически показываем меню, если ещё не выбрана конкретная
-                            if (filters.voice === 'Любой') {
-                                self.showVoiceMenu(voices);
-                            } else if (voice_links[filters.voice]) {
-                                // Продолжаем загрузку по уже выбранной
-                                self.loadVoicesOrEpisodes(voice_links[filters.voice], depth + 1);
-                            } else {
-                                self.empty('Выбранная озвучка больше не доступна');
-                            }
-                        } else {
-                            self.empty('Ни серий, ни других озвучек не найдено');
+                var $dom = $('<div>' + res + '</div>');
+                
+                // Поиск кнопок перевода (Сериалы)
+                $dom.find('.videos__button').each(function() {
+                    try {
+                        var json = JSON.parse($(this).attr('data-json'));
+                        var name = $(this).text().trim();
+                        if (json && json.method === 'link' && json.url && name) {
+                            voice_links[name] = json.url;
                         }
-                    } else {
-                        self.renderList();
-                    }
-                }, function() {
-                    safeLoading.hide();
-                    self.empty('Ошибка сети при загрузке озвучки');
-                }, false, { dataType: 'text' });
+                    } catch(e) {}
+                });
+
+                // Поиск серий
+                $dom.find('.videos__item').each(function() {
+                    try {
+                        var json = JSON.parse($(this).attr('data-json'));
+                        if (json) {
+                            if (!json.translate && json.translation) json.translate = json.translation;
+                            raw_data.push(json);
+                        }
+                    } catch(e) {}
+                });
+                
+                if (raw_data.length === 0 && Object.keys(voice_links).length === 0) {
+                    return this.empty('Ничего не найдено');
+                } else if (raw_data.length === 0 && Object.keys(voice_links).length > 0) {
+                    // Если нет серий, но есть озвучки - показываем меню автоматически
+                    var voices = this.getAvailableVoices();
+                    this.showVoiceMenu(voices);
+                } else {
+                    this.renderList();
+                }
             };
 
             this.renderList = function() {
@@ -223,8 +210,7 @@
 
                 raw_data.forEach(function(data) {
                     var voice_name = (data.translate || data.translation || 'Стандарт').trim();
-                    // Фильтрация работает только если озвучка указана прямо в объекте серии
-                    if (filters.voice !== 'Любой' && voice_name !== filters.voice && !filters.voice_url) return;
+                    if (filters.voice !== 'Любой' && voice_name !== filters.voice) return; // Фильтрация по озвучке из полей серий
 
                     var title = data.title || (data.translate ? voice_name : 'Серия');
                     var card = $('<div class="selector focusable" style="padding:16px; margin:8px 20px; background:rgba(255,255,255,0.05); border-radius:12px; display:flex; align-items:center; gap:16px; border:1px solid rgba(255,255,255,0.03);">\
