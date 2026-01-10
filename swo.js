@@ -2,10 +2,10 @@
     'use strict';
 
     /**
-     * Filmix Nexus (Universal) v2.3.3
-     * - Исправлены ошибки Loading.show и component.start
-     * - Полная совместимость с форками (zrovid, lampac и др.)
-     * - Нативный интерфейс Interaction
+     * Filmix Nexus (Legacy Support) v2.3.4
+     * - Исправлена ошибка: Lampa.Interaction is not a constructor
+     * - Добавлен fallback на Lampa.Select для старых версий
+     * - Оптимизирован сетевой запрос (убраны лишние CORS вызовы)
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -31,18 +31,11 @@
             return url;
         }
 
-        // Универсальный индикатор загрузки
         function toggleLoading(show) {
             try {
-                if (typeof Lampa.Loading === 'function') {
-                    Lampa.Loading(show);
-                } else if (Lampa.Loading) {
-                    if (show && Lampa.Loading.show) Lampa.Loading.show();
-                    else if (!show && Lampa.Loading.hide) Lampa.Loading.hide();
-                }
-            } catch (e) {
-                console.log('Filmix: Loading helper error', e);
-            }
+                if (typeof Lampa.Loading === 'function') Lampa.Loading(show);
+                else if (Lampa.Loading && Lampa.Loading.show) show ? Lampa.Loading.show() : Lampa.Loading.hide();
+            } catch (e) {}
         }
 
         function loadFilmix(movie) {
@@ -58,7 +51,7 @@
                     displayFilmix(res, movie, fetch);
                 }, function () {
                     toggleLoading(false);
-                    Lampa.Noty.show('Ошибка соединения с Filmix');
+                    Lampa.Noty.show('Filmix: Ошибка сети');
                 }, false, { dataType: 'text' });
             };
 
@@ -69,7 +62,6 @@
             var $dom = $('<div>' + res + '</div>');
             var items = [], filters = [];
 
-            // Собираем фильтры
             $dom.find('.videos__button, .selector[data-json*="link"]').each(function() {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
@@ -77,7 +69,6 @@
                 } catch(e) {}
             });
 
-            // Собираем серии
             $dom.find('.videos__item, .selector[data-json*="play"]').each(function() {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
@@ -89,36 +80,59 @@
                 } catch(e) {}
             });
 
-            var interaction = new Lampa.Interaction({
-                card: movie,
-                filter: filters.length > 0
-            });
-
-            interaction.onPlay = function(item) {
-                Lampa.Player.play({ url: item.url, title: item.title, movie: movie });
-            };
-
-            interaction.onFilter = function() {
-                Lampa.Select.show({
-                    title: 'Выбор озвучки/сезона',
-                    items: filters.map(function(f) { return { title: f.title, value: f.url }; }),
-                    onSelect: function(item) {
-                        fetchCallback(item.value);
-                    },
-                    onBack: function() {
-                        Lampa.Controller.toggle('interaction');
-                    }
+            // ПРОВЕРКА НАЛИЧИЯ INTERACTION
+            if (typeof Lampa.Interaction !== 'undefined') {
+                var interaction = new Lampa.Interaction({
+                    card: movie,
+                    filter: filters.length > 0
                 });
-            };
 
-            Lampa.Activity.push({
-                component: 'interaction',
-                title: 'Filmix',
-                object: interaction,
-                onBack: function() { Lampa.Activity.backward(); }
-            });
+                interaction.onPlay = function(item) {
+                    Lampa.Player.play({ url: item.url, title: item.title, movie: movie });
+                };
 
-            interaction.content(items);
+                interaction.onFilter = function() {
+                    Lampa.Select.show({
+                        title: 'Фильтр',
+                        items: filters.map(function(f) { return { title: f.title, value: f.url }; }),
+                        onSelect: function(item) { fetchCallback(item.value); }
+                    });
+                };
+
+                Lampa.Activity.push({
+                    component: 'interaction',
+                    title: 'Filmix',
+                    object: interaction,
+                    onBack: function() { Lampa.Activity.backward(); }
+                });
+
+                interaction.content(items);
+            } else {
+                // FALLBACK: Используем нативные списки Lampa.Select, если Interaction сломан
+                var showList = function() {
+                    Lampa.Select.show({
+                        title: movie.title || movie.name || 'Filmix',
+                        items: items.map(function(i) { return { title: i.title + ' ['+i.quality+']', value: i }; }),
+                        onSelect: function(item) {
+                            Lampa.Player.play({ url: item.value.url, title: item.value.title, movie: movie });
+                        },
+                        onBack: function() {
+                            Lampa.Controller.toggle('full_start');
+                        }
+                    });
+                };
+
+                if (filters.length > 0) {
+                    Lampa.Select.show({
+                        title: 'Выбор варианта',
+                        items: filters.map(function(f) { return { title: f.title, value: f.url }; }),
+                        onSelect: function(item) { fetchCallback(item.value); },
+                        onBack: function() { showList(); }
+                    });
+                } else {
+                    showList();
+                }
+            }
         }
 
         Lampa.Listener.follow('full', function (e) {
