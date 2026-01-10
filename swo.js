@@ -2,258 +2,205 @@
     'use strict';
 
     /**
-     * Filmix Nexus (Series Pro Fix) v2.1.3 – MIRROR FIX
-     * - BASE_DOMAIN = showypro.com + зеркала
-     * - Автоматический перебор зеркал при 403/ошибке
-     * - Приоритет серий всегда первый
+     * SHARA FXAPI FULL + Озвучки
+     * - Основано на твоём рабочем скрипте
+     * - Добавлен выбор озвучки через меню (как в fx_hybrid)
+     * - BASE_DOMAIN = IP (146.103.111.209) без прокси (как в оригинале)
+     * - Если серии есть — показываем сразу
      */
-    function startPlugin() {
-        if (window.filmix_nexus_loaded) return;
-        window.filmix_nexus_loaded = true;
+    var Defined = {
+        name: 'SHARA',
+        video_host: 'http://146.103.111.209/',
+        uid: 'p8nqb9ii',
+        showy_token: 'ik377033-90eb-4d76-93c9-7605952a096l'
+    };
 
-        var WORKING_UID = 'i8nqb9vw';
-        var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
+    function component(object) {
+        var network = new Lampa.Reguest();
+        var scroll = new Lampa.Scroll({ mask: true, over: true });
+        var files = new Lampa.Explorer(object);
 
-        var MIRRORS = [
-            'http://showypro.com',
-            'http://146.103.111.209',  // на случай если кто-то использует IP
-            'https://showy.pro'        // возможное новое зеркало, проверь в браузере
-        ];
+        var last;
+        var raw_data = [];
+        var voice_links = {};
+        var filters = { voice: 'Любой', voice_url: '' };
 
-        var PROXIES = [
-            'https://cors.lampa.stream/',
-            'https://cors.byskaz.ru/',
-            'https://corsproxy.io/?'
-        ];
+        function buildUrl(custom) {
+            if (!object.movie || !object.movie.kinopoisk_id) return null;
 
-        var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0')) || 0;
+            var base = Defined.video_host + 'lite/fxapi?rjson=False' +
+                       '&kinopoisk_id=' + object.movie.kinopoisk_id +
+                       '&s=1' +  // сезон по умолчанию, потом меняем
+                       '&uid=' + Defined.uid +
+                       '&showy_token=' + Defined.showy_token;
 
-        var safeLoading = {
-            show: function() { try { Lampa.Loading?.show(); } catch(e){} },
-            hide: function() { try { Lampa.Loading?.hide(); } catch(e){} }
-        };
-
-        $('<style>\
-            .fx-nexus-header { display:flex; align-items:center; gap:10px; padding:12px 20px; background:rgba(0,0,0,0.8); border-bottom:1px solid rgba(255,255,255,0.1); position:sticky; top:0; z-index:10; }\
-            .fx-nexus-pill { background:rgba(255,255,255,0.12); padding:8px 18px; border-radius:8px; font-size:14px; font-weight:700; border:1px solid rgba(255,255,255,0.1); cursor:pointer; color:#fff; }\
-            .fx-nexus-pill.focus { background:#fff; color:#000; transform:scale(1.05); }\
-            .fx-nexus-title { font-size:12px; color:rgba(255,255,255,0.4); margin-left:auto; }\
-            .fx-card-play { width:36px; height:36px; background:#ff0000; border-radius:50%; display:flex; align-items:center; justify-content:center; }\
-        </style>').appendTo('head');
-
-        function FilmixComponent(object) {
-            var network = new (Lampa.Request || Lampa.Reguest)();
-            var scroll = new Lampa.Scroll({ mask: true, over: true });
-            var html = $('<div class="fx-nexus-component"></div>');
-            var container = $('<div class="fx-nexus-list" style="padding-bottom:80px;"></div>');
-            var header = $('<div class="fx-nexus-header"></div>');
-
-            var items = [], header_items = [], active_item = 0, current_mode = 'content';
-
-            var filters = { season: '1 сезон', voice: 'Любой', voice_url: '' };
-
-            var raw_data = [], voice_links = {};
-            var total_seasons = object.movie.number_of_seasons || (object.movie.seasons?.length || 0);
-
-            this.create = function() {
-                html.append(header).append(scroll.render());
-                scroll.append(container);
-                this.loadContent(0); // начинаем с первого зеркала
-                return html;
-            };
-
-            this.updateHeader = function() {
-                header.empty(); header_items = [];
-
-                if (total_seasons > 0) {
-                    var s_btn = $(`<div class="fx-nexus-pill selector focusable">${filters.season}</div>`);
-                    s_btn.on('hover:enter', () => this.showSeasonMenu());
-                    header.append(s_btn);
-                    header_items.push(s_btn);
-                }
-
-                header.append(`<div class="fx-nexus-title">${object.movie.title || object.movie.name || ''}</div>`);
-            };
-
-            this.showSeasonMenu = function() {
-                var menu = [];
-                for (let i = 1; i <= total_seasons; i++) menu.push({title: i + ' сезон', value: i});
-                Lampa.Select.show({
-                    title: 'Выбор сезона',
-                    items: menu,
-                    onSelect: item => {
-                        filters.season = item.title;
-                        this.loadContent(0); // перезапуск с первого зеркала
-                    },
-                    onBack: () => Lampa.Controller.toggle('fx_nexus_ctrl')
-                });
-            };
-
-            this.loadContent = function(mirrorIdx, custom_url) {
-                if (mirrorIdx >= MIRRORS.length) {
-                    this.empty('Все зеркала заблокированы Cloudflare. Попробуйте обновить токен/uid в браузере.');
-                    return;
-                }
-
-                const base = MIRRORS[mirrorIdx];
-                const s_num = (filters.season.match(/\d+/) || [1])[0];
-                const kp_id = object.movie.kinopoisk_id || object.movie.kp_id;
-                const id_param = kp_id ? `kinopoisk_id=${kp_id}` : `postid=${object.movie.id}`;
-                
-                let url = custom_url || `${base}/lite/fxapi?rjson=False&${id_param}&s=${s_num}&uid=${WORKING_UID}&showy_token=${WORKING_TOKEN}&rchtype=cors`;
-
-                safeLoading.show();
-                network.native(PROXIES[currentProxyIdx] + url, res => {
-                    safeLoading.hide();
-
-                    if (res.includes('Direct IP access not allowed') || res.includes('Error 1003')) {
-                        console.log(`Зеркало ${base} заблокировано Cloudflare, пробуем следующее...`);
-                        this.loadContent(mirrorIdx + 1);
-                        return;
-                    }
-
-                    this.parseData(res);
-                }, () => {
-                    safeLoading.hide();
-                    console.log(`Ошибка сети на зеркале ${base}, пробуем следующее...`);
-                    this.loadContent(mirrorIdx + 1);
-                }, false, {dataType: 'text'});
-            };
-
-            this.parseData = function(res) {
-                raw_data = [];
-                voice_links = {};
-
-                const $dom = $('<div>' + res + '</div>');
-
-                $dom.find('.videos__button').each(function() {
-                    try {
-                        const json = JSON.parse($(this).attr('data-json') || '{}');
-                        const name = $(this).text().trim();
-                        if (json.method === 'link' && json.url && name) {
-                            voice_links[name] = json.url;
-                        }
-                    } catch(e) {}
-                });
-
-                $dom.find('.videos__item').each(function() {
-                    try {
-                        const json = JSON.parse($(this).attr('data-json') || '{}');
-                        if (json.method === 'play' && json.url) {
-                            raw_data.push(json);
-                        }
-                    } catch(e) {}
-                });
-
-                if (raw_data.length > 0) {
-                    this.renderList();
-                } else if (Object.keys(voice_links).length > 0) {
-                    this.showVoiceMenu(['Любой', ...Object.keys(voice_links)]);
-                } else {
-                    this.empty('Ничего не найдено (возможно, нужна авторизация)');
-                }
-            };
-
-            this.renderList = function() {
-                container.empty();
-                items = [];
-                active_item = 0;
-
-                this.updateHeader();
-
-                raw_data.forEach(data => {
-                    let title = data.title?.trim() || `Серия ${data.e || '?'}`;
-
-                    if (filters.voice !== 'Любой') {
-                        title = filters.voice + ' • ' + title;
-                    }
-
-                    const card = $(`
-                        <div class="selector focusable" style="padding:16px; margin:8px 20px; background:rgba(255,255,255,0.05); border-radius:12px; display:flex; align-items:center; gap:16px; border:1px solid rgba(255,255,255,0.03);">
-                            <div class="fx-card-play"><svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>
-                            <div style="flex:1; overflow:hidden;">
-                                <div style="font-size:16px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${title}</div>
-                                <div style="font-size:11px; opacity:0.4; margin-top:4px;">${data.quality ? Object.keys(data.quality).join(', ') : 'HD'}</div>
-                            </div>
-                        </div>
-                    `);
-
-                    card.on('hover:enter', () => {
-                        Lampa.Player.play({ url: data.url, title: title, movie: object.movie });
-                    });
-
-                    container.append(card);
-                    items.push(card);
-                });
-
-                if (!items.length) {
-                    container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Серии не найдены</div>');
-                }
-
-                this.start();
-            };
-
-            this.empty = function(msg) {
-                container.empty().append(`<div style="padding:100px 20px; text-align:center; opacity:0.4;">${msg}</div>`);
-                this.updateHeader();
-                this.start();
-            };
-
-            this.start = function() {
-                Lampa.Controller.add('fx_nexus_ctrl', {
-                    toggle: () => {
-                        if (current_mode === 'header' && header_items.length) {
-                            Lampa.Controller.collectionSet(header);
-                            Lampa.Controller.collectionFocus(header_items[0][0], header);
-                        } else {
-                            Lampa.Controller.collectionSet(container);
-                            const f = items[active_item]?.[0] || container.find('.selector')[0];
-                            if (f) Lampa.Controller.collectionFocus(f, container);
-                        }
-                    },
-                    up: () => {
-                        if (current_mode === 'content') {
-                            if (active_item > 0) active_item--;
-                            else if (header_items.length) current_mode = 'header', Lampa.Controller.toggle('fx_nexus_ctrl');
-                        }
-                    },
-                    down: () => {
-                        if (current_mode === 'header' && items.length) current_mode = 'content', Lampa.Controller.toggle('fx_nexus_ctrl');
-                        else if (active_item < items.length - 1) active_item++;
-                    },
-                    back: () => Lampa.Activity.backward()
-                });
-                Lampa.Controller.enable('fx_nexus_ctrl');
-            };
-
-            this.pause = function() {};
-            this.stop = function() {};
-            this.render = function() { return html; };
-
-            this.destroy = function() {
-                network.clear();
-                scroll.destroy();
-                html.remove();
-                safeLoading.hide();
-                Lampa.Controller.enable('content');
-            };
+            if (custom) base += custom;
+            return base;
         }
 
-        Lampa.Component.add('fx_hybrid_v9', FilmixComponent);
+        function parseHtml(str) {
+            var html = $('<div>' + str + '</div>');
+            var items = [];
 
-        Lampa.Listener.follow('full', e => {
-            if (e.type === 'complete' || e.type === 'complite') {
-                const render = e.object.activity.render();
-                if (render.find('.fx-nexus-native').length) return;
+            // Кнопки озвучек
+            html.find('.videos__button').each(function () {
+                var el = $(this);
+                var json = el.attr('data-json');
+                if (!json) return;
+                try {
+                    json = JSON.parse(json);
+                    var name = el.text().trim();
+                    if (json.method === 'link' && json.url && name) {
+                        voice_links[name] = json.url;
+                    }
+                } catch(e) {}
+            });
 
-                const btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Смотреть</span></div>');
-                btn.on('hover:enter', () => Lampa.Activity.push({component: 'fx_hybrid_v9', movie: e.data.movie}));
+            // Серии
+            html.find('.videos__item').each(function () {
+                var el = $(this);
+                var json = el.attr('data-json');
+                if (!json) return;
+                try {
+                    json = JSON.parse(json);
+                    if (json.method === 'play') {
+                        json.title = el.find('.videos__item-title').text() || json.title || 'Серия';
+                        json.voice_name = json.translate || 'Стандарт';
+                        items.push(json);
+                    }
+                } catch(e) {}
+            });
 
-                const target = render.find('.view--torrent');
-                target.length ? target.after(btn) : render.find('.full-start__buttons').append(btn);
+            return items;
+        }
+
+        function play(item) {
+            Lampa.Player.play({
+                title: item.title,
+                url: item.url,
+                quality: item.quality || {},
+                voice_name: item.voice_name,
+                isonline: true
+            });
+        }
+
+        function render(videos) {
+            scroll.clear();
+
+            videos.forEach(function (item) {
+                var html = Lampa.Template.get('lampac_prestige_full', {
+                    title: item.title,
+                    time: '',
+                    info: item.voice_name,
+                    quality: item.quality ? Object.keys(item.quality).join(', ') : ''
+                });
+
+                html.on('hover:enter', function () {
+                    play(item);
+                });
+
+                html.on('hover:focus', function (e) {
+                    last = e.target;
+                    scroll.update($(e.target), true);
+                });
+
+                scroll.append(html);
+            });
+
+            if (videos.length === 0) {
+                scroll.append('<div style="padding:60px; text-align:center; opacity:0.5;">Нет серий для этой озвучки</div>');
             }
-        });
+
+            Lampa.Controller.enable('content');
+        }
+
+        function load(custom) {
+            var url = buildUrl(custom);
+            if (!url) return;
+
+            network.native(url, function (str) {
+                var videos = parseHtml(str);
+                if (videos.length) {
+                    render(videos);
+                } else if (Object.keys(voice_links).length > 0) {
+                    showVoiceMenu();
+                } else {
+                    empty();
+                }
+            }, empty, false, { dataType: 'text' });
+        }
+
+        function showVoiceMenu() {
+            var voices = ['Любой'].concat(Object.keys(voice_links));
+            Lampa.Select.show({
+                title: 'Выбор озвучки',
+                items: voices.map(v => ({title: v, value: v})),
+                onSelect: function(item) {
+                    if (item.value === 'Любой') {
+                        load();
+                    } else {
+                        var url = voice_links[item.value];
+                        if (url) load(url.replace(Defined.video_host, ''));  // добавляем только путь
+                    }
+                }
+            });
+        }
+
+        function empty() {
+            scroll.clear();
+            scroll.append(Lampa.Template.get('lampac_does_not_answer', {}));
+        }
+
+        this.start = function () {
+            load();
+
+            Lampa.Controller.add('content', {
+                toggle: function () {
+                    Lampa.Controller.collectionSet(scroll.render(), files.render());
+                    Lampa.Controller.collectionFocus(last || false, scroll.render());
+                },
+                back: function () {
+                    Lampa.Activity.backward();
+                }
+            });
+
+            Lampa.Controller.toggle('content');
+        };
+
+        this.render = function () {
+            return files.render();
+        };
+
+        this.destroy = function () {
+            network.clear();
+            scroll.destroy();
+            files.destroy();
+        };
     }
 
-    if (typeof Lampa !== 'undefined') startPlugin();
+    function startPlugin() {
+        Lampa.Component.add('SHARA', component);
+
+        Lampa.Manifest.plugins = {
+            type: 'video',
+            name: 'SHARA',
+            description: 'SHARA FXAPI FULL + Озвучки',
+            component: 'SHARA',
+            onContextMenu: function () {
+                return {
+                    name: 'Смотреть онлайн',
+                    description: 'SHARA'
+                };
+            },
+            onContextLauch: function (object) {
+                Lampa.Activity.push({
+                    title: 'SHARA',
+                    component: 'SHARA',
+                    movie: object
+                });
+            }
+        };
+    }
+
+    startPlugin();
 })();
