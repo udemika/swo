@@ -2,10 +2,10 @@
     'use strict';
 
     /**
-     * Filmix Nexus (Stable UI) v2.4.2
-     * - Исправлен "пустой экран" при открытии
-     * - Автозагрузка данных при создании компонента
-     * - Обработка ошибок сети и прокси
+     * Filmix Nexus (Proxy Resilience) v2.4.3
+     * - Авто-переключение прокси при ошибке 502/403
+     * - Кнопка "Сменить прокси" в окне ошибки
+     * - Улучшенная совместимость с CORS-прокси
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -13,12 +13,13 @@
 
         var WORKING_UID = 'i8nqb9vw';
         var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
-        var BASE_DOMAIN = 'https://showypro.com'; // Используем HTTPS
+        var BASE_DOMAIN = 'https://showypro.com';
         
         var PROXIES = [
-            'https://cors.byskaz.ru/',
             'https://cors.lampa.stream/',
-            'https://corsproxy.io/?'
+            'https://corsproxy.io/?',
+            'https://api.allorigins.win/raw?url=',
+            'https://cors.byskaz.ru/'
         ];
 
         var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0'));
@@ -44,39 +45,77 @@
             var html = $('<div class="category-full"></div>');
             var container = $('<div class="category-full__container"></div>');
             var _this = this;
+            var lastUrl = '';
+            var retryCount = 0;
 
             this.create = function () {
                 html.append(scroll.render());
                 scroll.append(container);
-                
-                // Сразу показываем статус загрузки
-                container.html('<div class="fx-status" style="text-align:center; padding: 100px 20px; opacity:0.6; font-size: 1.3em;">Загрузка данных Filmix...</div>');
-                
-                // Если URL передан в объекте - грузим сразу
-                if (object.url) {
-                    this.load(object.url);
-                }
-                
+                container.html('<div class="fx-status" style="text-align:center; padding: 100px 20px; opacity:0.6; font-size: 1.3em;">Инициализация Filmix...</div>');
+                if (object.url) this.load(object.url);
                 return html;
             };
 
             this.load = function (targetUrl) {
+                lastUrl = targetUrl;
+                var proxy = PROXIES[currentProxyIdx];
+                var finalUrl = sign(targetUrl);
+                
+                // Кодируем URL для определенных прокси
+                if (proxy.indexOf('?') !== -1) {
+                    finalUrl = proxy + encodeURIComponent(finalUrl);
+                } else {
+                    finalUrl = proxy + finalUrl;
+                }
+
                 toggleLoading(true);
-                network.native(PROXIES[currentProxyIdx] + sign(targetUrl), function (res) {
+                container.find('.fx-status').text('Загрузка через прокси #' + (currentProxyIdx + 1) + '...');
+
+                network.native(finalUrl, function (res) {
                     toggleLoading(false);
-                    if (res) _this.draw(res);
-                    else container.html('<div style="text-align:center; padding: 100px 20px; color: #ffae00;">Сервер вернул пустой ответ</div>');
-                }, function () {
+                    retryCount = 0;
+                    if (res && res.length > 100) {
+                        _this.draw(res);
+                    } else {
+                        _this.showError('Пустой ответ от сервера');
+                    }
+                }, function (err) {
                     toggleLoading(false);
-                    container.html('<div style="text-align:center; padding: 100px 20px; color: #ff4b4b;">Ошибка загрузки. Попробуйте сменить прокси в настройках.</div>');
-                }, false, { dataType: 'text' });
+                    console.log('Filmix Proxy Error:', err);
+                    
+                    // Авто-ретрай с другим прокси (максимум 3 попытки)
+                    if (retryCount < PROXIES.length - 1) {
+                        retryCount++;
+                        currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
+                        Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx);
+                        _this.load(lastUrl);
+                    } else {
+                        _this.showError('Все прокси-серверы вернули ошибку (502/403).');
+                    }
+                }, false, { dataType: 'text', timeout: 10000 });
+            };
+
+            this.showError = function(msg) {
+                container.empty();
+                var err_html = $(
+                    '<div style="text-align:center; padding: 80px 20px;">' +
+                        '<div style="color: #ff4b4b; font-size: 1.2em; margin-bottom: 20px;">' + msg + '</div>' +
+                        '<div class="full-start__button selector fx-retry-btn" style="display:inline-block; background: #3d4450;"><span>Сменить прокси и повторить</span></div>' +
+                    '</div>'
+                );
+                err_html.find('.fx-retry-btn').on('hover:enter', function() {
+                    currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
+                    Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx);
+                    _this.load(lastUrl);
+                });
+                container.append(err_html);
+                Lampa.Controller.collectionFocus(container.find('.selector')[0], container);
             };
 
             this.draw = function (res) {
                 var $dom = $('<div>' + res + '</div>');
                 container.empty();
 
-                // Отрисовка фильтров (Сезоны, Озвучки)
                 var filters = $dom.find('.videos__button, .selector[data-json*="link"]');
                 if (filters.length > 0) {
                     var filter_wrap = $('<div class="category-full__external" style="margin-bottom: 30px; display: flex; flex-wrap: wrap; gap: 10px; padding: 0 10px;"></div>');
@@ -91,7 +130,6 @@
                     container.append(filter_wrap);
                 }
 
-                // Отрисовка списка серий
                 var items_count = 0;
                 $dom.find('.videos__item, .selector[data-json*="play"]').each(function() {
                     try {
@@ -116,11 +154,10 @@
                 });
 
                 if (items_count === 0 && filters.length === 0) {
-                    container.append('<div style="text-align:center; padding: 100px; opacity:0.5;">Контент не найден или недоступен</div>');
+                    _this.showError('Контент не найден в ответе сервера.');
+                } else {
+                    _this.start();
                 }
-
-                // Включаем контроллер и фокусируемся
-                _this.start();
             };
 
             this.start = function () {
@@ -149,18 +186,16 @@
                 if (!render) return;
 
                 var inject = function() {
-                    if (render.find('.fx-nexus-v6').length) return;
+                    if (render.find('.fx-nexus-v7').length) return;
 
-                    var btn = $('<div class="full-start__button selector view--online fx-nexus-v6"><span>Смотреть Filmix</span></div>');
+                    var btn = $('<div class="full-start__button selector view--online fx-nexus-v7"><span>Смотреть Filmix</span></div>');
                     btn.on('hover:enter', function () {
                         var id = e.data.movie.kinopoisk_id || e.data.movie.kp_id || e.data.movie.id;
                         var startUrl = BASE_DOMAIN + '/lite/fxapi?kinopoisk_id=' + id;
-                        if (!e.data.movie.kinopoisk_id && !e.data.movie.kp_id) startUrl = BASE_DOMAIN + '/lite/fxapi?postid=' + id;
-
-                        // Передаем URL сразу в активность
+                        
                         Lampa.Activity.push({
                             component: 'filmix_browser',
-                            title: 'Filmix: ' + (e.data.movie.title || e.data.movie.name),
+                            title: 'Filmix',
                             movie: e.data.movie,
                             url: startUrl
                         });
@@ -169,14 +204,14 @@
                     var container = render.find('.full-start__buttons, .full-start__actions, .full-start__left, .full-start').first();
                     var existingBtn = render.find('.full-start__button, .selector').first();
 
-                    if (existingBtn.length && !existingBtn.hasClass('fx-nexus-v6')) existingBtn.before(btn);
+                    if (existingBtn.length && !existingBtn.hasClass('fx-nexus-v7')) existingBtn.before(btn);
                     else if (container.length) container.prepend(btn);
 
                     if (Lampa.Controller.toggle) Lampa.Controller.toggle('full_start');
                 };
 
                 inject();
-                setTimeout(inject, 500);
+                setTimeout(inject, 600);
             }
         });
     }
