@@ -2,11 +2,10 @@
     'use strict';
 
     /**
-     * Filmix Nexus (System UI + High Stability) v2.5.0
-     * - Возврат к системному интерфейсу Lampa.Interaction
-     * - Полная поддержка пультов (Tizen, WebOS, Android TV)
-     * - Использование стабильных прокси Akter-Black и IP-узлов
-     * - Автоматическая ротация при ошибках Cloudflare (521/502)
+     * Filmix Nexus (System UI Fix) v2.5.1
+     * - Исправлен Mixed Content (HTTPS Everywhere)
+     * - Исправлена работа пульта (Native Interaction)
+     * - Исправлен запуск плеера на папках/сезонах
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -15,9 +14,9 @@
         var WORKING_UID = 'i8nqb9vw';
         var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
         
+        // Принудительно HTTPS для избежания Mixed Content
         var API_MIRRORS = [
             'https://showypro.com',
-            'http://showypro.com',
             'https://showy.online',
             'https://showypro.xyz'
         ];
@@ -28,8 +27,7 @@
             'http://85.198.110.239:8975/',
             'http://91.184.245.56:8975/',
             'https://cors.lampa.stream/',
-            'https://corsproxy.io/?',
-            'https://cors.byskaz.ru/'
+            'https://corsproxy.io/?'
         ];
 
         var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0'));
@@ -40,7 +38,8 @@
             if (url.indexOf('uid=') == -1) url = Lampa.Utils.addUrlComponent(url, 'uid=' + WORKING_UID);
             if (url.indexOf('showy_token=') == -1) url = Lampa.Utils.addUrlComponent(url, 'showy_token=' + WORKING_TOKEN);
             if (url.indexOf('rjson=') == -1) url = Lampa.Utils.addUrlComponent(url, 'rjson=False');
-            return url;
+            // Принудительная замена http на https для API доменов
+            return url.replace('http://showypro.com', 'https://showypro.com');
         }
 
         function toggleLoading(show) {
@@ -75,14 +74,9 @@
                 network.native(finalUrl, function (res) {
                     toggleLoading(false);
                     if (res && res.length > 200) {
-                        if (res.indexOf('Web server is down') !== -1 || res.indexOf('521') !== -1 || res.indexOf('502 Bad Gateway') !== -1) {
-                            next();
-                        } else {
-                            render(res, movie, request);
-                        }
-                    } else {
-                        next();
-                    }
+                        if (res.indexOf('521') !== -1 || res.indexOf('down') !== -1) next();
+                        else render(res, movie, lastPath);
+                    } else next();
                 }, function () {
                     toggleLoading(false);
                     next();
@@ -90,49 +84,43 @@
             };
 
             var next = function() {
-                if (retryCount < (PROXIES.length + 2)) {
+                if (retryCount < (PROXIES.length + 1)) {
                     retryCount++;
                     currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
-                    if (retryCount % 2 === 0) currentMirrorIdx = (currentMirrorIdx + 1) % API_MIRRORS.length;
-                    
                     Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx);
-                    Lampa.Storage.set('fx_nexus_mirror_idx', currentMirrorIdx);
                     request();
                 } else {
-                    Lampa.Noty.show('Filmix: Все узлы недоступны. Попробуйте позже.');
+                    Lampa.Noty.show('Filmix: Ошибка соединения (HTTP 521/CORS)');
                 }
             };
 
             request();
         }
 
-        function render(res, movie, reloadCallback) {
+        function render(res, movie, currentPath) {
             var $dom = $('<div>' + res + '</div>');
             var items = [], filters = [];
 
-            // Собираем фильтры (сезоны/переводы)
-            $dom.find('.videos__button, .selector[data-json*="link"]').each(function() {
+            // Собираем всё содержимое
+            $dom.find('.selector[data-json]').each(function() {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
-                    filters.push({ title: $(this).text().trim(), url: json.url });
+                    var title = $(this).text().trim() || json.title || 'Видео';
+                    
+                    // Если это ссылка на раздел (сезон/перевод), а не поток
+                    if (json.link || (json.url && json.url.indexOf('fxapi') > -1 && !json.play)) {
+                        filters.push({ title: title, url: json.url });
+                    } else {
+                        items.push({
+                            title: title,
+                            quality: json.maxquality || 'HD',
+                            url: sign(json.url),
+                            info: json.maxquality ? ' [' + json.maxquality + ']' : ''
+                        });
+                    }
                 } catch(e) {}
             });
 
-            // Собираем эпизоды
-            $dom.find('.videos__item, .selector[data-json*="play"]').each(function() {
-                try {
-                    var json = JSON.parse($(this).attr('data-json'));
-                    var title = $(this).find('.videos__item-title').text().trim() || json.title || 'Видео';
-                    items.push({
-                        title: title,
-                        quality: json.maxquality || 'HD',
-                        url: sign(json.url),
-                        info: json.maxquality ? ' [' + json.maxquality + ']' : ''
-                    });
-                } catch(e) {}
-            });
-
-            // Используем системный Interaction для дизайна как на скриншоте
             if (typeof Lampa.Interaction !== 'undefined') {
                 var interaction = new Lampa.Interaction({
                     card: movie,
@@ -140,16 +128,21 @@
                 });
 
                 interaction.onPlay = function(item) {
+                    // Страховка: если по ошибке в список попал API URL
+                    if (item.url.indexOf('fxapi') > -1 && item.url.indexOf('showy_token') > -1 && item.url.indexOf('.mp4') === -1 && item.url.indexOf('.m3u8') === -1) {
+                         var path = item.url.split('fxapi')[1] || '';
+                         loadFilmix(movie, '/lite/fxapi' + path);
+                         return;
+                    }
                     Lampa.Player.play({ url: item.url, title: item.title, movie: movie });
                 };
 
                 interaction.onFilter = function() {
                     Lampa.Select.show({
-                        title: 'Выбор сезона / качества',
+                        title: 'Сезоны / Переводы',
                         items: filters.map(function(f) { return { title: f.title, value: f.url }; }),
                         onSelect: function(item) {
                             var path = item.value.split('fxapi')[1] || '';
-                            // Перезагружаем с новым путем
                             loadFilmix(movie, '/lite/fxapi' + path);
                         }
                     });
@@ -164,9 +157,8 @@
 
                 interaction.content(items);
             } else {
-                // Fallback для совсем старых версий (Lampa.Select)
                 Lampa.Select.show({
-                    title: movie.title || movie.name || 'Filmix',
+                    title: movie.title || 'Filmix',
                     items: items.map(function(i) { return { title: i.title + i.info, value: i }; }),
                     onSelect: function(item) {
                         Lampa.Player.play({ url: item.value.url, title: item.value.title, movie: movie });
@@ -181,9 +173,9 @@
                 if (!renderActivity) return;
 
                 var inject = function() {
-                    if (renderActivity.find('.fx-nexus-v11').length) return;
+                    if (renderActivity.find('.fx-nexus-v12').length) return;
 
-                    var btn = $('<div class="full-start__button selector view--online fx-nexus-v11"><span>Смотреть Filmix</span></div>');
+                    var btn = $('<div class="full-start__button selector view--online fx-nexus-v12"><span>Смотреть Filmix</span></div>');
                     btn.on('hover:enter', function () {
                         loadFilmix(e.data.movie);
                     });
@@ -191,7 +183,7 @@
                     var container = renderActivity.find('.full-start__buttons, .full-start__actions, .full-start__left, .full-start').first();
                     var existingBtn = renderActivity.find('.full-start__button, .selector').first();
 
-                    if (existingBtn.length && !existingBtn.hasClass('fx-nexus-v11')) existingBtn.before(btn);
+                    if (existingBtn.length && !existingBtn.hasClass('fx-nexus-v12')) existingBtn.before(btn);
                     else if (container.length) container.prepend(btn);
 
                     if (Lampa.Controller.toggle) Lampa.Controller.toggle('full_start');
