@@ -2,11 +2,11 @@
     'use strict';
 
     /**
-     * Filmix Nexus (Series Pro Fix) v2.0.5
-     * - Исправлено исчезновение серий при выборе конкретной озвучки
-     * - Улучшена обработка ссылок на переводы (кнопки videos__button)
-     * - Сохранение списка озвучек при переходах внутри сезона
-     * - Принудительное присвоение названия озвучки для элементов без метаданных
+     * Filmix Nexus (Series Pro Fix) v2.0.6
+     * - Реализована логика Lampac для обработки вложенных ссылок (method: link)
+     * - Исправлено исчезновение ссылок при смене озвучки в сериалах
+     * - Автоматическое наследование выбранной озвучки для вложенных видео
+     * - Оптимизированное хранение состояния выбора (voice_url)
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -166,13 +166,15 @@
                 raw_data = [];
                 var $dom = $('<div>' + res + '</div>');
                 
-                // Сбор кнопок переводов (всегда сканируем для обновления voice_links)
+                // Обновляем список озвучек только если они есть в новом ответе
+                var found_buttons = false;
                 $dom.find('.videos__button, .videos__item[data-json*="link"]').each(function() {
                     try {
                         var json = JSON.parse($(this).attr('data-json'));
                         var name = $(this).text().trim() || json.title;
                         if (json && (json.method === 'link' || json.method === 'playlist') && json.url && name) {
                             voice_links[name] = json.url;
+                            found_buttons = true;
                         }
                     } catch(e) {}
                 });
@@ -182,20 +184,28 @@
                     try {
                         var json = JSON.parse($(this).attr('data-json'));
                         if (json && (json.method === 'play' || json.url)) {
-                            // Если мы в режиме конкретной ссылки, помечаем все серии этой озвучкой
-                            if (!json.translate && !json.translation && is_subview && filters.voice !== 'Любой') {
+                            // Если это ответ по ссылке озвучки, помечаем серии этой озвучкой принудительно
+                            if (is_subview && filters.voice !== 'Любой') {
                                 json.translate = filters.voice;
                             }
                             if (!json.translate && json.translation) json.translate = json.translation;
                             
-                            // Избегаем дубликатов
                             var is_dup = raw_data.some(function(r) { return r.url === json.url; });
                             if (!is_dup) raw_data.push(json);
                         }
                     } catch(e) {}
                 });
                 
-                if (raw_data.length === 0 && Object.keys(voice_links).length === 0) {
+                // Если серии не найдены, но есть кнопки озвучек - проверяем, не нужно ли автоматически зайти в одну из них
+                if (raw_data.length === 0 && found_buttons) {
+                    var voices = this.getAvailableVoices();
+                    if (filters.voice !== 'Любой' && voice_links[filters.voice]) {
+                        this.loadContent(voice_links[filters.voice]);
+                        return;
+                    }
+                }
+
+                if (raw_data.length === 0 && !found_buttons && Object.keys(voice_links).length === 0) {
                     this.empty('Контент не найден');
                 } else {
                     this.renderList();
@@ -213,7 +223,7 @@
                 raw_data.forEach(function(data) {
                     var voice_name = (data.translate || data.translation || 'Стандарт').trim();
                     
-                    // Если это подзапрос по ссылке озвучки, мы не фильтруем по тексту
+                    // Если мы пришли по ссылке конкретной озвучки, пропускаем строгую фильтрацию по имени
                     if (!filters.voice_url && filters.voice !== 'Любой' && voice_name !== filters.voice) {
                         return;
                     }
@@ -236,7 +246,7 @@
                 });
 
                 if (items.length === 0) {
-                    container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Список серий пуст. Попробуйте сменить озвучку в меню.</div>');
+                    container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Выберите перевод в меню выше</div>');
                 }
                 
                 this.start();
