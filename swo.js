@@ -1,13 +1,13 @@
 (function () {
     'use strict';
 
-    /**
-     * SHARA FXAPI FULL + Озвучки
-     * - Основано на твоём рабочем скрипте
-     * - Добавлен выбор озвучки через меню (как в fx_hybrid)
-     * - BASE_DOMAIN = IP (146.103.111.209) без прокси (как в оригинале)
-     * - Если серии есть — показываем сразу
-     */
+    /*
+     FULL SHARA FXAPI + ОЗВУЧКИ (минимальные изменения)
+     - Кнопка "Смотреть" должна вернуться
+     - Добавлено меню выбора озвучки (если есть .videos__button)
+     - Сервер: 146.103.111.209 (как в оригинале)
+    */
+
     var Defined = {
         name: 'SHARA',
         video_host: 'http://146.103.111.209/',
@@ -15,22 +15,23 @@
         showy_token: 'ik377033-90eb-4d76-93c9-7605952a096l'
     };
 
+    var Network = Lampa.Reguest;
+
     function component(object) {
-        var network = new Lampa.Reguest();
+        var network = new Network();
         var scroll = new Lampa.Scroll({ mask: true, over: true });
         var files = new Lampa.Explorer(object);
 
         var last;
         var raw_data = [];
         var voice_links = {};
-        var filters = { voice: 'Любой', voice_url: '' };
 
         function buildUrl(custom) {
             if (!object.movie || !object.movie.kinopoisk_id) return null;
 
             var base = Defined.video_host + 'lite/fxapi?rjson=False' +
                        '&kinopoisk_id=' + object.movie.kinopoisk_id +
-                       '&s=1' +  // сезон по умолчанию, потом меняем
+                       '&s=1' +
                        '&uid=' + Defined.uid +
                        '&showy_token=' + Defined.showy_token;
 
@@ -42,7 +43,8 @@
             var html = $('<div>' + str + '</div>');
             var items = [];
 
-            // Кнопки озвучек
+            // Собираем озвучки
+            voice_links = {};
             html.find('.videos__button').each(function () {
                 var el = $(this);
                 var json = el.attr('data-json');
@@ -108,7 +110,7 @@
             });
 
             if (videos.length === 0) {
-                scroll.append('<div style="padding:60px; text-align:center; opacity:0.5;">Нет серий для этой озвучки</div>');
+                scroll.append('<div style="padding:60px; text-align:center; opacity:0.5;">Нет серий</div>');
             }
 
             Lampa.Controller.enable('content');
@@ -120,30 +122,30 @@
 
             network.native(url, function (str) {
                 var videos = parseHtml(str);
-                if (videos.length) {
+
+                if (videos.length > 0) {
                     render(videos);
                 } else if (Object.keys(voice_links).length > 0) {
-                    showVoiceMenu();
+                    // Показываем меню озвучек
+                    var voices = ['Любой'].concat(Object.keys(voice_links));
+                    Lampa.Select.show({
+                        title: 'Выбор озвучки',
+                        items: voices.map(v => ({title: v, value: v})),
+                        onSelect: function(item) {
+                            if (item.value === 'Любой') {
+                                load();
+                            } else {
+                                var url = voice_links[item.value];
+                                if (url) {
+                                    load(url.replace(Defined.video_host, ''));
+                                }
+                            }
+                        }
+                    });
                 } else {
                     empty();
                 }
             }, empty, false, { dataType: 'text' });
-        }
-
-        function showVoiceMenu() {
-            var voices = ['Любой'].concat(Object.keys(voice_links));
-            Lampa.Select.show({
-                title: 'Выбор озвучки',
-                items: voices.map(v => ({title: v, value: v})),
-                onSelect: function(item) {
-                    if (item.value === 'Любой') {
-                        load();
-                    } else {
-                        var url = voice_links[item.value];
-                        if (url) load(url.replace(Defined.video_host, ''));  // добавляем только путь
-                    }
-                }
-            });
         }
 
         function empty() {
