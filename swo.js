@@ -2,11 +2,11 @@
     'use strict';
 
     /**
-     * Filmix Nexus (Series Pro Fix) v2.0.6
-     * - Реализована логика Lampac для обработки вложенных ссылок (method: link)
-     * - Исправлено исчезновение ссылок при смене озвучки в сериалах
-     * - Автоматическое наследование выбранной озвучки для вложенных видео
-     * - Оптимизированное хранение состояния выбора (voice_url)
+     * Filmix Nexus (Series Pro Fix) v2.0.8
+     * - Реализована логика автоматического перехода по кнопкам озвучек (как в Lampac)
+     * - Исправлено "пустое окно" при выборе перевода
+     * - Улучшен парсинг комбинированных ответов (кнопки + серии)
+     * - Полная поддержка сессионных параметров в account()
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -15,6 +15,7 @@
         var WORKING_UID = 'i8nqb9vw';
         var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
         var BASE_DOMAIN = 'http://showypro.com';
+        var HOST_KEY = BASE_DOMAIN.replace('http://', '').replace('https://', '');
 
         var PROXIES = [
             'https://cors.byskaz.ru/',
@@ -28,6 +29,50 @@
             show: function() { try { if(window.Lampa && Lampa.Loading && typeof Lampa.Loading.show === 'function') Lampa.Loading.show(); } catch(e){} },
             hide: function() { try { if(window.Lampa && Lampa.Loading && typeof Lampa.Loading.hide === 'function') Lampa.Loading.hide(); } catch(e){} }
         };
+
+        function account(url) {
+            url = url + '';
+            if (url.indexOf('account_email=') == -1) {
+                var email = Lampa.Storage.get('account_email');
+                if (email) url = Lampa.Utils.addUrlComponent(url, 'account_email=' + encodeURIComponent(email));
+            }
+            if (url.indexOf('uid=') == -1) {
+                var uid = Lampa.Storage.get('lampac_unic_id', WORKING_UID);
+                if (uid) url = Lampa.Utils.addUrlComponent(url, 'uid=' + encodeURIComponent(uid));
+            }
+            if (url.indexOf('nws_id=') == -1 && window.rch_nws && window.rch_nws[HOST_KEY]) {
+                var nws_id = window.rch_nws[HOST_KEY].connectionId || Lampa.Storage.get('lampac_nws_id', '');
+                if (nws_id) url = Lampa.Utils.addUrlComponent(url, 'nws_id=' + encodeURIComponent(nws_id));
+            }
+            return url;
+        }
+
+        function rchRun(json, call) {
+            if (typeof NativeWsClient == 'undefined') {
+                Lampa.Utils.putScript([BASE_DOMAIN + "/js/nws-client-es5.js"], function() {}, false, function() {
+                    rchInvoke(json, call);
+                }, true);
+            } else {
+                rchInvoke(json, call);
+            }
+        }
+
+        function rchInvoke(json, call) {
+            if (!window.nwsClient) window.nwsClient = {};
+            if (window.nwsClient[HOST_KEY] && window.nwsClient[HOST_KEY].socket)
+                window.nwsClient[HOST_KEY].socket.close();
+            
+            // @ts-ignore
+            window.nwsClient[HOST_KEY] = new NativeWsClient(json.nws, { autoReconnect: false });
+            window.nwsClient[HOST_KEY].on('Connected', function(connectionId) {
+                if (window.rch_nws && window.rch_nws[HOST_KEY] && typeof window.rch_nws[HOST_KEY].Registry === 'function') {
+                    window.rch_nws[HOST_KEY].Registry(window.nwsClient[HOST_KEY], call);
+                } else {
+                    call();
+                }
+            });
+            window.nwsClient[HOST_KEY].connect();
+        }
 
         $('<style>\
             .fx-nexus-header { display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: rgba(0,0,0,0.8); border-bottom: 1px solid rgba(255,255,255,0.1); position: sticky; top: 0; z-index: 10; }\
@@ -92,12 +137,12 @@
 
             this.getAvailableVoices = function() {
                 var v = ['Любой'];
+                Object.keys(voice_links).forEach(function(name) {
+                    if (v.indexOf(name) === -1) v.push(name);
+                });
                 raw_data.forEach(function(d) {
                     var name = (d.translate || d.translation || d.voice || '').trim();
                     if (name && v.indexOf(name) === -1) v.push(name);
-                });
-                Object.keys(voice_links).forEach(function(name) {
-                    if (v.indexOf(name) === -1) v.push(name);
                 });
                 return v;
             };
@@ -150,41 +195,49 @@
                 var url = custom_url || (BASE_DOMAIN + '/lite/fxapi?rjson=False&' + id_param + '&s=' + s_num + '&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors');
                 
                 if (url.indexOf('http') !== 0) url = BASE_DOMAIN + (url.indexOf('/') === 0 ? '' : '/') + url;
-                if (url.indexOf('rchtype=') === -1) url += (url.indexOf('?') === -1 ? '?' : '&') + 'rchtype=cors';
+                
+                url = account(url);
 
                 safeLoading.show();
                 network.native(PROXIES[currentProxyIdx] + url, function (res) {
                     safeLoading.hide();
+                    
+                    var json = {};
+                    try { json = JSON.parse(res); } catch(e) {}
+                    if (json.rch) {
+                        rchRun(json, function() { self.loadContent(custom_url); });
+                        return;
+                    }
+                    
                     self.parseData(res, !!custom_url);
                 }, function () {
                     safeLoading.hide();
-                    self.empty('Ошибка при загрузке данных');
+                    self.empty('Ошибка сети. Проверьте подключение или смените прокси.');
                 }, false, { dataType: 'text' });
             };
 
             this.parseData = function(res, is_subview) {
+                var self = this;
                 raw_data = [];
                 var $dom = $('<div>' + res + '</div>');
                 
-                // Обновляем список озвучек только если они есть в новом ответе
-                var found_buttons = false;
+                var buttons = [];
                 $dom.find('.videos__button, .videos__item[data-json*="link"]').each(function() {
                     try {
                         var json = JSON.parse($(this).attr('data-json'));
-                        var name = $(this).text().trim() || json.title;
+                        var name = $(this).text().trim() || json.title || json.text;
                         if (json && (json.method === 'link' || json.method === 'playlist') && json.url && name) {
                             voice_links[name] = json.url;
-                            found_buttons = true;
+                            buttons.push({ name: name, url: json.url, active: $(this).hasClass('active') || $(this).hasClass('focused') });
                         }
                     } catch(e) {}
                 });
 
-                // Сбор серий
                 $dom.find('.videos__item, [data-json*="play"]').each(function() {
                     try {
                         var json = JSON.parse($(this).attr('data-json'));
                         if (json && (json.method === 'play' || json.url)) {
-                            // Если это ответ по ссылке озвучки, помечаем серии этой озвучкой принудительно
+                            // Если мы в под-запросе, присваиваем имя озвучки всем сериям
                             if (is_subview && filters.voice !== 'Любой') {
                                 json.translate = filters.voice;
                             }
@@ -196,16 +249,18 @@
                     } catch(e) {}
                 });
                 
-                // Если серии не найдены, но есть кнопки озвучек - проверяем, не нужно ли автоматически зайти в одну из них
-                if (raw_data.length === 0 && found_buttons) {
-                    var voices = this.getAvailableVoices();
-                    if (filters.voice !== 'Любой' && voice_links[filters.voice]) {
-                        this.loadContent(voice_links[filters.voice]);
+                // ЛОГИКА СЛЕДОВАНИЯ ЗА ВЫБОРОМ (как в Lampac)
+                if (filters.voice !== 'Любой') {
+                    var target_btn = buttons.find(function(b) { return b.name === filters.voice; });
+                    // Если нашли кнопку нашей озвучки и она НЕ активна - переходим по ней
+                    if (target_btn && !target_btn.active) {
+                        filters.voice_url = target_btn.url;
+                        this.loadContent(target_btn.url);
                         return;
                     }
                 }
 
-                if (raw_data.length === 0 && !found_buttons && Object.keys(voice_links).length === 0) {
+                if (raw_data.length === 0 && buttons.length === 0) {
                     this.empty('Контент не найден');
                 } else {
                     this.renderList();
@@ -223,7 +278,7 @@
                 raw_data.forEach(function(data) {
                     var voice_name = (data.translate || data.translation || 'Стандарт').trim();
                     
-                    // Если мы пришли по ссылке конкретной озвучки, пропускаем строгую фильтрацию по имени
+                    // Фильтруем только если мы НЕ находимся внутри конкретной папки озвучки
                     if (!filters.voice_url && filters.voice !== 'Любой' && voice_name !== filters.voice) {
                         return;
                     }
@@ -238,7 +293,7 @@
                     </div>');
 
                     card.on('hover:enter', function() {
-                        Lampa.Player.play({ url: data.url, title: display_title, movie: object.movie });
+                        Lampa.Player.play({ url: account(data.url), title: display_title, movie: object.movie });
                     });
 
                     container.append(card);
@@ -246,7 +301,7 @@
                 });
 
                 if (items.length === 0) {
-                    container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Выберите перевод в меню выше</div>');
+                    container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Выберите подходящую озвучку в меню</div>');
                 }
                 
                 this.start();
