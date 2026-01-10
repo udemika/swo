@@ -2,7 +2,10 @@
     'use strict';
 
     /**
-     * Filmix Nexus (Series Pro Fix) v2.0.5 // Updated with voice filter fix for cases without translate field
+     * Filmix Nexus (Series Pro Fix) v2.0.8
+     * - Фильтрация по имени озвучки полностью отключена (нет translate в json)
+     * - Название озвучки добавляется в заголовок серии
+     * - Улучшена обработка случаев, когда серии есть, но не отображаются
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -87,10 +90,12 @@
 
             this.getAvailableVoices = function() {
                 var v = ['Любой'];
+                // 1. Извлекаем из серий (если есть поле translate)
                 raw_data.forEach(function(d) {
                     var name = (d.translate || d.translation || d.voice || '').trim();
                     if (name && v.indexOf(name) === -1) v.push(name);
                 });
+                // 2. Извлекаем из кнопок-ссылок (специфично для сериалов)
                 Object.keys(voice_links).forEach(function(name) {
                     if (v.indexOf(name) === -1) v.push(name);
                 });
@@ -143,6 +148,7 @@
                 
                 var url = custom_url || (BASE_DOMAIN + '/lite/fxapi?rjson=False&' + id_param + '&s=' + s_num + '&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors');
                 
+                // Исправляем URL если это не полный путь
                 if (url.indexOf('http') !== 0) url = BASE_DOMAIN + (url.indexOf('/') === 0 ? '' : '/') + url;
 
                 safeLoading.show();
@@ -161,6 +167,7 @@
 
                 var $dom = $('<div>' + res + '</div>');
                 
+                // Поиск кнопок перевода (Сериалы)
                 $dom.find('.videos__button').each(function() {
                     try {
                         var json = JSON.parse($(this).attr('data-json'));
@@ -171,6 +178,7 @@
                     } catch(e) {}
                 });
 
+                // Поиск серий
                 $dom.find('.videos__item').each(function() {
                     try {
                         var json = JSON.parse($(this).attr('data-json'));
@@ -184,6 +192,7 @@
                 if (raw_data.length === 0 && Object.keys(voice_links).length === 0) {
                     return this.empty('Ничего не найдено');
                 } else if (raw_data.length === 0 && Object.keys(voice_links).length > 0) {
+                    // Если серий нет, но есть озвучки - показываем меню автоматически
                     var voices = this.getAvailableVoices();
                     this.showVoiceMenu(voices);
                 } else {
@@ -200,17 +209,11 @@
                 this.updateHeader();
 
                 raw_data.forEach(function(data) {
-                    var voice_name = (data.translate || data.translation || 'Стандарт').trim();
+                    // Фильтрация отключена - показываем все серии из ответа
+                    var title = data.title || ('Серия ' + (data.e || '?'));
 
-                    if (filters.voice !== 'Любой' && 
-                        voice_name !== filters.voice && 
-                        !filters.voice_url) {
-                        return;
-                    }
-
-                    var title = data.title || 'Серия ' + (data.e || '?');
-                    
-                    if (filters.voice !== 'Любой' && filters.voice_url) {
+                    // Добавляем название озвучки в заголовок серии
+                    if (filters.voice !== 'Любой') {
                         title = filters.voice + ' • ' + title;
                     }
 
@@ -230,7 +233,7 @@
                     items.push(card);
                 });
 
-                if (items.length === 0) container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Серии не найдены для этой озвучки или ошибка загрузки</div>');
+                if (items.length === 0) container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Выберите перевод в меню выше</div>');
                 this.start();
             };
 
