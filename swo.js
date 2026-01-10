@@ -2,10 +2,10 @@
     'use strict';
 
     /**
-     * Filmix Nexus (Series Pro Fix) v2.1.2 – DEBUG & FIXED
-     * - BASE_DOMAIN = IP (146.103.111.209)
-     * - Если raw_data.length > 0 → всегда показываем серии
-     * - Добавлены console.log для дебага (удалить после теста)
+     * Filmix Nexus (Series Pro Fix) v2.1.3 – MIRROR FIX
+     * - BASE_DOMAIN = showypro.com + зеркала
+     * - Автоматический перебор зеркал при 403/ошибке
+     * - Приоритет серий всегда первый
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -13,7 +13,12 @@
 
         var WORKING_UID = 'i8nqb9vw';
         var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
-        var BASE_DOMAIN = 'http://146.103.111.209';
+
+        var MIRRORS = [
+            'http://showypro.com',
+            'http://146.103.111.209',  // на случай если кто-то использует IP
+            'https://showy.pro'        // возможное новое зеркало, проверь в браузере
+        ];
 
         var PROXIES = [
             'https://cors.lampa.stream/',
@@ -30,9 +35,9 @@
 
         $('<style>\
             .fx-nexus-header { display:flex; align-items:center; gap:10px; padding:12px 20px; background:rgba(0,0,0,0.8); border-bottom:1px solid rgba(255,255,255,0.1); position:sticky; top:0; z-index:10; }\
-            .fx-nexus-pill { background:rgba(255,255,255,0.12); padding:8px 18px; border-radius:8px; font-size:14px; font-weight:700; border:1px solid rgba(255,255,255,0.1); cursor:pointer; color:#fff; white-space:nowrap; }\
+            .fx-nexus-pill { background:rgba(255,255,255,0.12); padding:8px 18px; border-radius:8px; font-size:14px; font-weight:700; border:1px solid rgba(255,255,255,0.1); cursor:pointer; color:#fff; }\
             .fx-nexus-pill.focus { background:#fff; color:#000; transform:scale(1.05); }\
-            .fx-nexus-title { font-size:12px; color:rgba(255,255,255,0.4); margin-left:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:250px; }\
+            .fx-nexus-title { font-size:12px; color:rgba(255,255,255,0.4); margin-left:auto; }\
             .fx-card-play { width:36px; height:36px; background:#ff0000; border-radius:50%; display:flex; align-items:center; justify-content:center; }\
         </style>').appendTo('head');
 
@@ -53,7 +58,7 @@
             this.create = function() {
                 html.append(header).append(scroll.render());
                 scroll.append(container);
-                this.loadContent();
+                this.loadContent(0); // начинаем с первого зеркала
                 return html;
             };
 
@@ -78,27 +83,40 @@
                     items: menu,
                     onSelect: item => {
                         filters.season = item.title;
-                        this.loadContent();
+                        this.loadContent(0); // перезапуск с первого зеркала
                     },
                     onBack: () => Lampa.Controller.toggle('fx_nexus_ctrl')
                 });
             };
 
-            this.loadContent = function(custom_url) {
+            this.loadContent = function(mirrorIdx, custom_url) {
+                if (mirrorIdx >= MIRRORS.length) {
+                    this.empty('Все зеркала заблокированы Cloudflare. Попробуйте обновить токен/uid в браузере.');
+                    return;
+                }
+
+                const base = MIRRORS[mirrorIdx];
                 const s_num = (filters.season.match(/\d+/) || [1])[0];
                 const kp_id = object.movie.kinopoisk_id || object.movie.kp_id;
                 const id_param = kp_id ? `kinopoisk_id=${kp_id}` : `postid=${object.movie.id}`;
                 
-                let url = custom_url || `${BASE_DOMAIN}/lite/fxapi?rjson=False&${id_param}&s=${s_num}&uid=${WORKING_UID}&showy_token=${WORKING_TOKEN}&rchtype=cors`;
+                let url = custom_url || `${base}/lite/fxapi?rjson=False&${id_param}&s=${s_num}&uid=${WORKING_UID}&showy_token=${WORKING_TOKEN}&rchtype=cors`;
 
                 safeLoading.show();
                 network.native(PROXIES[currentProxyIdx] + url, res => {
                     safeLoading.hide();
-                    console.log('Ответ от сервера:', url.substring(0, 100) + '...', res.substring(0, 200) + '...');
+
+                    if (res.includes('Direct IP access not allowed') || res.includes('Error 1003')) {
+                        console.log(`Зеркало ${base} заблокировано Cloudflare, пробуем следующее...`);
+                        this.loadContent(mirrorIdx + 1);
+                        return;
+                    }
+
                     this.parseData(res);
                 }, () => {
                     safeLoading.hide();
-                    this.empty('Ошибка сети');
+                    console.log(`Ошибка сети на зеркале ${base}, пробуем следующее...`);
+                    this.loadContent(mirrorIdx + 1);
                 }, false, {dataType: 'text'});
             };
 
@@ -108,7 +126,6 @@
 
                 const $dom = $('<div>' + res + '</div>');
 
-                // Кнопки озвучек
                 $dom.find('.videos__button').each(function() {
                     try {
                         const json = JSON.parse($(this).attr('data-json') || '{}');
@@ -119,7 +136,6 @@
                     } catch(e) {}
                 });
 
-                // Серии — основной приоритет
                 $dom.find('.videos__item').each(function() {
                     try {
                         const json = JSON.parse($(this).attr('data-json') || '{}');
@@ -129,18 +145,12 @@
                     } catch(e) {}
                 });
 
-                console.log('Найдено кнопок озвучек:', Object.keys(voice_links).length);
-                console.log('Найдено серий:', raw_data.length);
-
                 if (raw_data.length > 0) {
-                    console.log('Показываем серии...');
                     this.renderList();
                 } else if (Object.keys(voice_links).length > 0) {
-                    console.log('Показываем меню озвучек...');
                     this.showVoiceMenu(['Любой', ...Object.keys(voice_links)]);
                 } else {
-                    console.log('Ничего не найдено');
-                    this.empty('Ничего не найдено (проверьте токен/uid)');
+                    this.empty('Ничего не найдено (возможно, нужна авторизация)');
                 }
             };
 
