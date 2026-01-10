@@ -1,12 +1,8 @@
-
 (function () {
     'use strict';
 
     /**
-     * Filmix Nexus (Series Pro Fix) v2.0.3
-     * - Поддержка выбора озвучки через кнопки-ссылки (videos__button)
-     * - Исправлено появление кнопки выбора перевода в сериалах
-     * - Динамическая подгрузка данных при смене озвучки
+     * Filmix Nexus (Series Pro Fix) v2.0.4 // Updated to fix episodes not showing after voice selection and remove unregister to avoid error
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -30,7 +26,7 @@
         };
 
         $('<style>\
-            .fx-nexus-header { display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: rgba(0,0,0,0.8); border-bottom: 1px solid rgba(255,255,255,0.1); sticky top: 0; z-index: 10; }\
+            .fx-nexus-header { display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: rgba(0,0,0,0.8); border-bottom: 1px solid rgba(255,255,255,0.1); position: sticky; top: 0; z-index: 10; }\
             .fx-nexus-pill { background: rgba(255,255,255,0.12); padding: 8px 18px; border-radius: 8px; font-size: 14px; font-weight: 700; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; color: #fff; transition: all 0.2s; white-space: nowrap; }\
             .fx-nexus-pill.focus { background: #fff; color: #000; border-color: #fff; transform: scale(1.05); }\
             .fx-nexus-title { font-size: 12px; color: rgba(255,255,255,0.4); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px; }\
@@ -149,7 +145,6 @@
                 
                 var url = custom_url || (BASE_DOMAIN + '/lite/fxapi?rjson=False&' + id_param + '&s=' + s_num + '&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN + '&rchtype=cors');
                 
-                // Исправляем URL если это не полный путь
                 if (url.indexOf('http') !== 0) url = BASE_DOMAIN + (url.indexOf('/') === 0 ? '' : '/') + url;
 
                 safeLoading.show();
@@ -164,7 +159,8 @@
 
             this.parseData = function(res) {
                 raw_data = [];
-                // Не очищаем voice_links полностью, чтобы сохранить текущий список при фильтрации
+                voice_links = {};
+
                 var $dom = $('<div>' + res + '</div>');
                 
                 // Поиск кнопок перевода (Сериалы)
@@ -189,8 +185,14 @@
                     } catch(e) {}
                 });
                 
-                if (raw_data.length === 0 && Object.keys(voice_links).length === 0) return this.empty('Ничего не найдено');
-                this.renderList();
+                if (raw_data.length === 0 && Object.keys(voice_links).length === 0) {
+                    return this.empty('Ничего не найдено');
+                } else if (raw_data.length === 0 && Object.keys(voice_links).length > 0) {
+                    var voices = this.getAvailableVoices();
+                    this.showVoiceMenu(voices);
+                } else {
+                    this.renderList();
+                }
             };
 
             this.renderList = function() {
@@ -203,7 +205,6 @@
 
                 raw_data.forEach(function(data) {
                     var voice_name = (data.translate || data.translation || 'Стандарт').trim();
-                    // Фильтрация работает только если озвучка указана прямо в объекте серии
                     if (filters.voice !== 'Любой' && voice_name !== filters.voice && !filters.voice_url) return;
 
                     var title = data.title || (data.translate ? voice_name : 'Серия');
@@ -211,7 +212,7 @@
                         <div class="fx-card-play"><svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>\
                         <div style="flex:1; overflow:hidden;">\
                             <div style="font-size:16px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + title + '</div>\
-                            <div style="font-size:11px; opacity:0.4; margin-top:4px;">' + (data.maxquality || 'HD') + '</div>\
+                            <div style="font-size:11px; opacity:0.4; margin-top:4px;">' + (data.quality ? Object.keys(data.quality).join(', ') : (data.maxquality || 'HD')) + '</div>\
                         </div>\
                     </div>');
 
@@ -223,7 +224,7 @@
                     items.push(card);
                 });
 
-                if (items.length === 0) container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Выберите перевод в меню выше</div>');
+                if (items.length === 0) container.append('<div style="padding:60px; text-align:center; opacity:0.3;">Выберите перевод в меню выше или проверьте соединение</div>');
                 this.start();
             };
 
@@ -268,7 +269,8 @@
                 scroll.destroy(); 
                 html.remove(); 
                 safeLoading.hide();
-                Lampa.Controller.unregister('fx_nexus_ctrl');
+                // Removed unregister to avoid TypeError - switch back to default controller instead
+                Lampa.Controller.enable('content');
             };
         }
 
