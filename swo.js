@@ -18,15 +18,7 @@
             'https://cors557.deno.dev/'
         ];
 
-        var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0'));
-        if (isNaN(currentProxyIdx)) currentProxyIdx = 0;
-
-        function toggleLoading(show) {
-            try {
-                if (typeof Lampa.Loading === 'function') Lampa.Loading(show);
-                else if (Lampa.Loading && Lampa.Loading.show) show ? Lampa.Loading.show() : Lampa.Loading.hide();
-            } catch (e) {}
-        }
+        var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0')) || 0;
 
         function sign(url) {
             if (!url) return '';
@@ -37,102 +29,106 @@
             return url;
         }
 
-        function loadFilmix(movie, targetUrl) {
-            var network = new (Lampa.Request || Lampa.Reguest)();
+        // Вызов компонента как в on.js
+        function openFilmix(movie, targetUrl) {
             var url = targetUrl || (BASE_DOMAIN + '/lite/fxapi?' + (movie.kinopoisk_id ? 'kinopoisk_id=' + movie.kinopoisk_id : 'postid=' + movie.id));
             
-            var proxy = PROXIES[currentProxyIdx];
-            toggleLoading(true);
+            Lampa.Activity.push({
+                title: 'Filmix',
+                component: 'interaction',
+                object: {
+                    movie: movie,
+                    url: url,
+                    create: function() {
+                        this.load();
+                    },
+                    load: function() {
+                        var _this = this;
+                        var network = new Lampa.Reguest();
+                        var proxy = PROXIES[currentProxyIdx];
+                        
+                        _this.activity.loader(true);
 
-            network.native(proxy + sign(url), function (res) {
-                toggleLoading(false);
-                Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx.toString());
-                
-                var items = parseResponse(res);
-                if (items.length > 0) {
-                    openInteraction(items, movie);
-                } else {
-                    Lampa.Noty.show('Ничего не найдено');
-                }
-            }, function () {
-                toggleLoading(false);
-                currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
-                loadFilmix(movie, url);
-            }, false, { dataType: 'text' });
-        }
+                        network.native(proxy + sign(_this.url), function (res) {
+                            _this.activity.loader(false);
+                            var items = [];
+                            var $dom = $('<div>' + res + '</div>');
 
-        function parseResponse(html) {
-            var $dom = $('<div>' + html + '</div>');
-            var items = [];
+                            $dom.find('.selector, .videos__item, .videos__button').each(function() {
+                                var el = $(this);
+                                var jsonStr = el.attr('data-json');
+                                if(!jsonStr) return;
 
-            $dom.find('.selector, .videos__item, .videos__button').each(function() {
-                var el = $(this);
-                var jsonStr = el.attr('data-json');
-                if(!jsonStr) return;
+                                try {
+                                    var json = JSON.parse(jsonStr);
+                                    var link = json.url || json.play;
+                                    // Если в ссылке нет .m3u8 или .mp4 - это папка
+                                    var isFolder = !!json.url && !(link.indexOf('.m3u8') > -1 || link.indexOf('.mp4') > -1);
 
-                try {
-                    var json = JSON.parse(jsonStr);
-                    var link = json.url || json.play;
-                    // Если в ссылке есть расширение видео - это файл, иначе папка
-                    var isVideo = (link && (link.indexOf('.m3u8') > -1 || link.indexOf('.mp4') > -1));
+                                    items.push({
+                                        title: el.text().trim() || json.title || 'Видео',
+                                        subtitle: json.quality || json.maxquality || '',
+                                        url: link,
+                                        is_folder: isFolder,
+                                        template: 'selectbox_item'
+                                    });
+                                } catch(e) {}
+                            });
 
-                    items.push({
-                        title: el.text().trim() || json.title || 'Видео',
-                        url: link,
-                        quality: json.quality || json.maxquality || '',
-                        is_folder: !isVideo,
-                        template: 'selectbox_item'
-                    });
-                } catch(e) {}
-            });
-            return items;
-        }
-
-        function openInteraction(items, movie) {
-            // Если мы уже внутри окна Filmix, просто обновляем контент (для переходов Сезон -> Озвучка)
-            var active = Lampa.Activity.active();
-            if (active && active.component === 'interaction' && active.title === 'Filmix') {
-                active.activity.content(items);
-            } else {
-                // Создаем новое системное окно
-                Lampa.Activity.push({
-                    title: 'Filmix',
-                    component: 'interaction',
-                    object: {
-                        create: function() {
-                            this.activity.content(items);
-                        },
-                        onItem: function(item) {
-                            if (item.is_folder) {
-                                loadFilmix(movie, item.url);
+                            if (items.length > 0) {
+                                _this.activity.content(items);
                             } else {
-                                Lampa.Player.play({
-                                    url: sign(item.url),
-                                    title: item.title,
-                                    movie: movie
-                                });
+                                Lampa.Noty.show('Контент не найден');
+                                _this.activity.back();
                             }
-                        },
-                        onBack: function() {
-                            Lampa.Activity.backward();
+                        }, function () {
+                            currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
+                            Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx.toString());
+                            _this.load();
+                        }, false, { dataType: 'text' });
+                    },
+                    onItem: function(item) {
+                        if (item.is_folder) {
+                            // Для сезонов и озвучки подменяем URL и вызываем load() внутри того же окна
+                            this.url = item.url;
+                            this.load();
+                        } else {
+                            Lampa.Player.play({
+                                url: sign(item.url),
+                                title: item.title,
+                                movie: this.movie
+                            });
                         }
+                    },
+                    onBack: function() {
+                        Lampa.Activity.backward();
                     }
-                });
-            }
+                }
+            });
         }
 
+        // Добавление кнопки в шторку (как в on.js)
         function addButton(render, movie) {
             if (render.find('.fx-nexus-native').length) return;
 
-            // Логика как в on.js и shara.js: ищем кнопку торрентов
-            var target = render.find('.view--torrent, .button--play').last();
+            var target = render.find('.view--torrent, .button--play, .full-start__button').last();
             if (target.length) {
                 var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Filmix</span></div>');
                 btn.on('hover:enter', function () {
-                    loadFilmix(movie);
+                    openFilmix(movie);
                 });
                 target.after(btn);
-                if (Lampa.Controller.toggle) Lampa.Controller.toggle(Lampa.Controller.enabled().name);
+                // Принудительная перерисовка контроллера для навигации пультом
+                Lampa.Controller.add('full_start', {
+                    toggle: function () {},
+                    up: function () {},
+                    down: function () {},
+                    right: function () {},
+                    left: function () {},
+                    gone: function () {},
+                    enter: function () {}
+                });
+                Lampa.Controller.toggle('full_start');
             }
         }
 
