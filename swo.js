@@ -157,7 +157,7 @@
             if (render.find('.fx-nexus-native').length) return;
             var target = render.find('.view--torrent, .view--online, .button--play, .full-start__buttons').last();
             if (target.length) {
-                var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Filmix</span></div>');
+                var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:6px"><circle cx="12" cy="12" r="11" fill="#fff"/><polygon points="10,8 17,12 10,16" fill="#000"/></svg>Filmix UHD</span></div>');
                 btn.on('hover:enter', function () { 
                     loadFilmix(movie); 
                 });
