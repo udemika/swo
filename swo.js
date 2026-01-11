@@ -3,10 +3,10 @@
 
     /**
      * Filmix Nexus (Legacy Support)
-     * - Системное окно фильтра (Lampa.Select)
+     * - Фильтр как в on.js: правая системная панель Lampa.Filter
+     *   + внутри неё системный Select для выбора значения
      * - Отдельно сезоны и переводы
      * - Чек в корневом окне на последнем изменённом пункте
-     * - Фикс: убран jQuery-селектор с кавычками (Syntax error, unrecognized expression)
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -89,7 +89,7 @@
 
             var last = Lampa.Storage.get('fx_nexus_last_filter', 'season'); // 'season' | 'voice'
 
-            // Сезоны: строго по классу videos__season
+            // Сезоны: .videos__item.videos__season -> method:link
             $dom.find('.videos__item.videos__season[data-json]').each(function () {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
@@ -102,7 +102,7 @@
                 } catch (e) {}
             });
 
-            // Переводы: строго по videos__button
+            // Переводы: .videos__button -> method:link
             $dom.find('.videos__button[data-json]').each(function () {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
@@ -112,7 +112,7 @@
                 } catch (e) {}
             });
 
-            // Видео: парсим JSON и берём method === 'play' без сложных CSS-селекторов
+            // Видео: .videos__item[data-json] -> method:play
             $dom.find('.videos__item[data-json]').each(function () {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
@@ -126,7 +126,7 @@
                 } catch (e) {}
             });
 
-            // Если пришли только сезоны — сразу уходим в выбранный сезон
+            // Если ответ — только список сезонов, сразу переходим в сохранённый сезон
             if (!items.length && seasons.length && !voices.length) {
                 if (savedSeasonIdx >= seasons.length) savedSeasonIdx = 0;
                 Lampa.Storage.set('fx_nexus_season_idx', String(savedSeasonIdx));
@@ -137,98 +137,99 @@
             if (savedSeasonIdx >= seasons.length) savedSeasonIdx = 0;
             if (savedVoiceIdx >= voices.length) savedVoiceIdx = 0;
 
-            function openSystemFilterSelect() {
+            function openFilterPanel() {
+                // Важно: именно Lampa.Filter (системная правая панель как в on.js)
                 var enabled = Lampa.Controller.enabled().name;
+                var panel = new Lampa.Filter({});
 
-                function closeAll() {
-                    setTimeout(function () { Lampa.Select.close(); }, 10);
-                    Lampa.Controller.toggle(enabled);
-                }
+                var select = [];
 
-                function openSeasons() {
-                    Lampa.Select.show({
-                        title: 'Сезон',
-                        items: seasons.map(function (s, i) {
-                            return { title: s.title, index: i, selected: i === savedSeasonIdx };
-                        }),
-                        onBack: openRoot,
-                        onSelect: function (a) {
-                            savedSeasonIdx = a.index || 0;
-                            last = 'season';
-                            Lampa.Storage.set('fx_nexus_last_filter', last);
-                            Lampa.Storage.set('fx_nexus_season_idx', String(savedSeasonIdx));
-                            closeAll();
-                            fetchCallback(seasons[savedSeasonIdx].url);
-                        }
-                    });
-                }
+                select.push({ title: 'Сбросить фильтр', reset: true });
 
-                function openVoices() {
-                    Lampa.Select.show({
+                if (voices.length) {
+                    select.push({
                         title: 'Перевод',
+                        subtitle: (voices[savedVoiceIdx] ? voices[savedVoiceIdx].title : ''),
+                        stype: 'voice',
+                        selected: last === 'voice',
                         items: voices.map(function (v, i) {
-                            return { title: v.title, index: i, selected: i === savedVoiceIdx };
-                        }),
-                        onBack: openRoot,
-                        onSelect: function (a) {
-                            savedVoiceIdx = a.index || 0;
-                            last = 'voice';
-                            Lampa.Storage.set('fx_nexus_last_filter', last);
-                            Lampa.Storage.set('fx_nexus_voice_idx', String(savedVoiceIdx));
-                            closeAll();
-                            fetchCallback(voices[savedVoiceIdx].url);
-                        }
+                            return { title: v.title, selected: i === savedVoiceIdx, index: i };
+                        })
                     });
                 }
 
-                function openRoot() {
-                    var root = [];
-
-                    root.push({ title: 'Сбросить фильтр', reset: true });
-
-                    if (voices.length) {
-                        root.push({
-                            title: 'Перевод',
-                            subtitle: voices[savedVoiceIdx] ? voices[savedVoiceIdx].title : '',
-                            voice: true,
-                            selected: last === 'voice'
-                        });
-                    }
-
-                    if (seasons.length) {
-                        root.push({
-                            title: 'Сезон',
-                            subtitle: seasons[savedSeasonIdx] ? seasons[savedSeasonIdx].title : '',
-                            season: true,
-                            selected: last === 'season'
-                        });
-                    }
-
-                    Lampa.Select.show({
-                        title: 'Фильтр',
-                        items: root,
-                        onBack: function () { Lampa.Controller.toggle(enabled); },
-                        onSelect: function (a) {
-                            if (a.reset) {
-                                savedSeasonIdx = 0;
-                                savedVoiceIdx = 0;
-                                last = 'season';
-                                Lampa.Storage.set('fx_nexus_last_filter', last);
-                                Lampa.Storage.set('fx_nexus_season_idx', '0');
-                                Lampa.Storage.set('fx_nexus_voice_idx', '0');
-                                closeAll();
-                                if (seasons[0]) fetchCallback(seasons[0].url);
-                                else if (voices[0]) fetchCallback(voices[0].url);
-                                return;
-                            }
-
-                            if (a.voice) return openVoices();
-                            if (a.season) return openSeasons();
-                        }
+                if (seasons.length) {
+                    select.push({
+                        title: 'Сезон',
+                        subtitle: (seasons[savedSeasonIdx] ? seasons[savedSeasonIdx].title : ''),
+                        stype: 'season',
+                        selected: last === 'season',
+                        items: seasons.map(function (s, i) {
+                            return { title: s.title, selected: i === savedSeasonIdx, index: i };
+                        })
                     });
                 }
 
-                openRoot();
+                panel.set('filter', select);
+
+                panel.onBack = function () {
+                    Lampa.Controller.toggle(enabled);
+                };
+
+                panel.onSelect = function (type, a, b) {
+                    if (type !== 'filter') return;
+
+                    // b.index приходит из системного Select внутри Lampa.Filter
+                    if (a && a.reset) {
+                        savedSeasonIdx = 0;
+                        savedVoiceIdx = 0;
+                        last = 'season';
+                        Lampa.Storage.set('fx_nexus_last_filter', last);
+                        Lampa.Storage.set('fx_nexus_season_idx', '0');
+                        Lampa.Storage.set('fx_nexus_voice_idx', '0');
+
+                        setTimeout(function () { Lampa.Select.close(); }, 10);
+                        Lampa.Controller.toggle(enabled);
+
+                        if (seasons[0]) fetchCallback(seasons[0].url);
+                        else if (voices[0]) fetchCallback(voices[0].url);
+                        return;
+                    }
+
+                    if (a && a.stype === 'season') {
+                        var si = (b && typeof b.index !== 'undefined') ? b.index : 0;
+                        if (si < 0 || si >= seasons.length) si = 0;
+
+                        savedSeasonIdx = si;
+                        last = 'season';
+                        Lampa.Storage.set('fx_nexus_last_filter', last);
+                        Lampa.Storage.set('fx_nexus_season_idx', String(savedSeasonIdx));
+
+                        setTimeout(function () { Lampa.Select.close(); }, 10);
+                        Lampa.Controller.toggle(enabled);
+
+                        fetchCallback(seasons[savedSeasonIdx].url);
+                        return;
+                    }
+
+                    if (a && a.stype === 'voice') {
+                        var vi = (b && typeof b.index !== 'undefined') ? b.index : 0;
+                        if (vi < 0 || vi >= voices.length) vi = 0;
+
+                        savedVoiceIdx = vi;
+                        last = 'voice';
+                        Lampa.Storage.set('fx_nexus_last_filter', last);
+                        Lampa.Storage.set('fx_nexus_voice_idx', String(savedVoiceIdx));
+
+                        setTimeout(function () { Lampa.Select.close(); }, 10);
+                        Lampa.Controller.toggle(enabled);
+
+                        fetchCallback(voices[savedVoiceIdx].url);
+                        return;
+                    }
+                };
+
+                panel.show('Фильтр', panel);
             }
 
             if (typeof Lampa.Interaction !== 'undefined') {
@@ -242,7 +243,7 @@
                 };
 
                 interaction.onFilter = function () {
-                    openSystemFilterSelect();
+                    openFilterPanel();
                 };
 
                 Lampa.Activity.push({
@@ -254,6 +255,7 @@
 
                 interaction.content(items);
             } else {
+                // Fallback
                 Lampa.Select.show({
                     title: (movie.title || movie.name || 'Filmix'),
                     items: items.map(function (i) { return { title: i.title + ' [' + i.quality + ']', value: i }; }),
