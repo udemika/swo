@@ -36,33 +36,33 @@
             } catch (e) {}
         }
 
-        function loadFilmix(movie) {
+        function loadFilmix(movie, targetUrl) {
             var network = new (Lampa.Request || Lampa.Reguest)();
-            var id = movie.kinopoisk_id || movie.kp_id || movie.id;
-            var url = BASE_DOMAIN + '/lite/fxapi?kinopoisk_id=' + id;
-            if (!movie.kinopoisk_id && !movie.kp_id) url = BASE_DOMAIN + '/lite/fxapi?postid=' + id;
+            var url = targetUrl;
+            
+            if(!url) {
+                var id = movie.kinopoisk_id || movie.kp_id || movie.id;
+                url = BASE_DOMAIN + '/lite/fxapi?kinopoisk_id=' + id;
+                if (!movie.kinopoisk_id && !movie.kp_id) url = BASE_DOMAIN + '/lite/fxapi?postid=' + id;
+            }
 
             var attempts = 0;
-            
-            // Рекурсивная функция загрузки (используется и для первого входа, и для клика по папкам)
-            var fetchWithRetry = function(targetUrl) {
+            var fetchWithRetry = function(reqUrl) {
                 var proxy = PROXIES[currentProxyIdx];
                 toggleLoading(true);
 
-                network.native(proxy + sign(targetUrl), function (res) {
+                network.native(proxy + sign(reqUrl), function (res) {
                     toggleLoading(false);
                     Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx.toString());
-                    displayFilmix(res, movie, fetchWithRetry);
+                    displayFilmix(res, movie);
                 }, function (err) {
                     attempts++;
-                    console.log('Filmix: Proxy ' + proxy + ' failed. Switching...');
-                    
                     if (attempts < PROXIES.length) {
                         currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
-                        fetchWithRetry(targetUrl);
+                        fetchWithRetry(reqUrl);
                     } else {
                         toggleLoading(false);
-                        Lampa.Noty.show('Filmix: Ошибка сети (все прокси недоступны)');
+                        Lampa.Noty.show('Ошибка загрузки Filmix');
                     }
                 }, false, { dataType: 'text' });
             };
@@ -70,98 +70,78 @@
             fetchWithRetry(url);
         }
 
-        // --- ГЛАВНОЕ ИЗМЕНЕНИЕ: Формирование системного списка ---
-        function displayFilmix(res, movie, fetchCallback) {
+        function displayFilmix(res, movie) {
             var $dom = $('<div>' + res + '</div>');
             var items = [];
 
-            // 1. Собираем Папки (Сезоны, Переводы) - помечаем их как folder
-            $dom.find('.videos__button, .selector[data-json*="link"]').each(function() {
+            // Собираем всё в один список для Interaction
+            $dom.find('.videos__button, .videos__item, .selector').each(function() {
+                var element = $(this);
+                var jsonStr = element.attr('data-json');
+                if(!jsonStr) return;
+
                 try {
-                    var json = JSON.parse($(this).attr('data-json'));
+                    var json = JSON.parse(jsonStr);
+                    var isFolder = !!json.url; // Если есть url - это папка (сезон/перевод)
+                    
                     items.push({
-                        title: $(this).text().trim(),
-                        url: json.url,
-                        type: 'folder' // Это папка, ее надо открыть
+                        title: element.text().trim() || json.title || 'Видео',
+                        quality: json.maxquality || '',
+                        url: isFolder ? json.url : sign(json.url || ''),
+                        type: isFolder ? 'folder' : 'video',
+                        template: 'selectbox_item' // Используем стандартный шаблон списка
                     });
                 } catch(e) {}
             });
 
-            // 2. Собираем Видео (Серии, Фильмы) - помечаем их как video
-            $dom.find('.videos__item, .selector[data-json*="play"]').each(function() {
-                try {
-                    var json = JSON.parse($(this).attr('data-json'));
-                    items.push({
-                        title: $(this).find('.videos__item-title').text().trim() || json.title || 'Видео',
-                        quality: json.maxquality || 'HD',
-                        url: sign(json.url),
-                        type: 'video', // Это видео, его надо играть
-                        subtitle: json.quality ? json.quality : (json.maxquality || '')
-                    });
-                } catch(e) {}
-            });
-
-            if (items.length === 0) {
-                Lampa.Noty.show('Filmix: Видео не найдено');
+            if (!items.length) {
+                Lampa.Noty.show('Ничего не найдено');
                 return;
             }
 
-            // Создаем объект Activity вручную, чтобы не зависеть от версии Lampa
-            var activityObject = {
+            // Создаем объект для управления окном
+            var interactionObject = {
                 create: function() {
-                    // Используем стандартный метод activity.content для отрисовки списка
-                    // Это создает тот самый вид "как на скриншоте"
                     this.activity.content(items);
-                    
-                    // Если список пуст или грузится
-                    if (!items.length) this.activity.empty();
                 },
-                // Обработчик нажатия (enter/ok)
                 onItem: function(item) {
                     if (item.type === 'folder') {
-                        // Если это папка (сезон/перевод), загружаем её содержимое
-                        fetchCallback(item.url);
+                        // Рекурсивно загружаем папку в том же окне
+                        loadFilmix(movie, item.url);
                     } else {
-                        // Если это видео, играем
+                        // Запускаем видео
                         Lampa.Player.play({
                             url: item.url,
                             title: item.title,
                             movie: movie
                         });
                     }
-                }
-            };
-
-            // Открываем полноценное системное окно
-            Lampa.Activity.push({
-                url: '',
-                title: 'Filmix',
-                component: 'interaction', // Указываем системный компонент
-                page: 1,
-                object: activityObject, // Передаем нашу логику
+                },
                 onBack: function() {
                     Lampa.Activity.backward();
                 }
+            };
+
+            // Вызываем системное окно (как на скриншоте)
+            Lampa.Activity.push({
+                title: 'Filmix',
+                component: 'interaction',
+                object: interactionObject
             });
         }
 
+        // Кнопка в карточке фильма
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complete' || e.type == 'complite') {
                 var render = e.object.activity.render();
                 var inject = function() {
                     if (render.find('.fx-nexus-native').length) return;
-                    
                     var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Смотреть Filmix</span></div>');
                     btn.on('hover:enter', function () {
                         loadFilmix(e.data.movie);
                     });
-
-                    var container = render.find('.full-start__buttons, .full-start__actions, .full-start');
-                    var watchBtn = render.find('.watch-button, .full-start__button').first();
-
-                    if (watchBtn.length) watchBtn.before(btn);
-                    else if (container.length) container.prepend(btn);
-                    
+                    var container = render.find('.full-start__buttons, .full-start__actions').first();
+                    if (container.length) container.prepend(btn);
                     if (Lampa.Controller.toggle) Lampa.Controller.toggle('full_start');
                 };
                 inject();
