@@ -1,12 +1,11 @@
-
 (function () {
     'use strict';
 
     /**
-     * Filmix Nexus (Maximum Stability) v2.4.9
-     * - Исправлена ошибка 503 (Service Unavailable) через Anti-Cache
-     * - Принудительный сброс сетевого стека network.clear()
-     * - Улучшена работа пульта при переходах из глубокого скролла
+     * Filmix Nexus (Maximum Stability) v2.4.6
+     * - Приоритет на стабильные прокси: Akter-Black & Dedicated IPs
+     * - Авто-переключение HTTP/HTTPS для зеркал (обход 521 ошибки)
+     * - Улучшенная ротация при сбоях Cloudflare
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -15,6 +14,7 @@
         var WORKING_UID = 'i8nqb9vw';
         var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
         
+        // Зеркала с поддержкой смены протокола
         var API_MIRRORS = [
             'https://showypro.com',
             'http://showypro.com',
@@ -22,6 +22,7 @@
             'https://showypro.xyz'
         ];
         
+        // Прокси в порядке приоритета стабильности
         var PROXIES = [
             'https://apn5.akter-black.com/',
             'https://apn10.akter-black.com/',
@@ -40,8 +41,6 @@
             if (url.indexOf('uid=') == -1) url = Lampa.Utils.addUrlComponent(url, 'uid=' + WORKING_UID);
             if (url.indexOf('showy_token=') == -1) url = Lampa.Utils.addUrlComponent(url, 'showy_token=' + WORKING_TOKEN);
             if (url.indexOf('rjson=') == -1) url = Lampa.Utils.addUrlComponent(url, 'rjson=False');
-            // Кэш-бастер для обхода 503 ошибки прокси
-            url = Lampa.Utils.addUrlComponent(url, '_fx=' + Math.floor(Math.random() * 1000000));
             return url;
         }
 
@@ -60,23 +59,15 @@
             var _this = this;
             var lastPath = '';
             var retryCount = 0;
-            var maxRetries = PROXIES.length + API_MIRRORS.length;
 
             this.create = function () {
                 html.append(scroll.render());
                 scroll.append(container);
-                container.html('<div class="fx-status" style="text-align:center; padding: 100px 20px; opacity:0.6; font-size: 1.2em;">Подключение к Filmix...</div>');
-                
-                // Полный сброс перед созданием компонента
-                network.clear();
-
+                container.html('<div class="fx-status" style="text-align:center; padding: 100px 20px; opacity:0.6; font-size: 1.2em;">Инициализация Filmix...</div>');
                 if (object.url) {
                     var path = object.url.split('fxapi')[1] || '';
                     this.load('/lite/fxapi' + path);
-                } else if (object.search) {
-                    this.load('/lite/fxapi?search=' + encodeURIComponent(object.search));
                 }
-                
                 return html;
             };
 
@@ -94,48 +85,45 @@
                 }
 
                 toggleLoading(true);
-                network.clear(); // Очистка старых запросов перед новым
-
                 container.find('.fx-status').html(
-                    '<div style="margin-bottom:10px;">Загрузка Filmix...</div>' +
-                    '<div style="font-size:0.7em; opacity:0.4;">Узел: ' + (currentProxyIdx + 1) + '/' + PROXIES.length + '</div>'
+                    '<div style="margin-bottom:10px;">Загрузка данных...</div>' +
+                    '<div style="font-size:0.75em; opacity:0.5; overflow:hidden;">' + 
+                        (proxy.indexOf('akter') > -1 ? 'Akter Proxy' : (proxy.indexOf('8975') > -1 ? 'Direct Node' : 'CORS Proxy')) + 
+                    '</div>'
                 );
 
                 network.native(finalUrl, function (res) {
                     toggleLoading(false);
+                    retryCount = 0;
                     if (res && res.length > 200) {
-                        // Проверка на ошибки Cloudflare и прокси
-                        if (res.indexOf('Web server is down') !== -1 || res.indexOf('521') !== -1 || res.indexOf('502 Bad Gateway') !== -1 || res.indexOf('503 Service') !== -1) {
-                            _this.handleServerError('Ошибка прокси (503)');
+                        // Проверка на Cloudflare Error 521 / 502 / 504
+                        if (res.indexOf('Web server is down') !== -1 || res.indexOf('521') !== -1 || res.indexOf('502 Bad Gateway') !== -1) {
+                            _this.handleServerError('Сервер Filmix недоступен (521/502)');
                         } else {
-                            retryCount = 0;
                             _this.draw(res);
                         }
                     } else {
-                        _this.handleServerError('Пустой ответ');
+                        _this.handleServerError('Ошибка данных API');
                     }
                 }, function (err) {
                     toggleLoading(false);
-                    _this.handleServerError('Ошибка сети (503)');
-                }, false, { dataType: 'text', timeout: 9000 });
+                    _this.handleServerError('Сбой сетевого узла');
+                }, false, { dataType: 'text', timeout: 7000 });
             };
 
             this.handleServerError = function(msg) {
-                if (retryCount < maxRetries) {
+                if (retryCount < (PROXIES.length + API_MIRRORS.length)) {
                     retryCount++;
+                    // Сначала перебираем прокси для текущего домена, потом меняем домен
                     currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
                     if (retryCount % 2 === 0) {
                         currentMirrorIdx = (currentMirrorIdx + 1) % API_MIRRORS.length;
                     }
-                    
                     Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx);
                     Lampa.Storage.set('fx_nexus_mirror_idx', currentMirrorIdx);
-                    
-                    setTimeout(function() {
-                        _this.load(lastPath);
-                    }, 100);
+                    _this.load(lastPath);
                 } else {
-                    _this.showError('Все узлы недоступны. Проверьте соединение.');
+                    _this.showError('Все каналы связи недоступны. Проверьте настройки сети.');
                 }
             };
 
@@ -144,22 +132,22 @@
                 var err_html = $(
                     '<div style="text-align:center; padding: 60px 20px;">' +
                         '<div style="color: #ff4b4b; font-size: 1.1em; margin-bottom: 25px;">' + msg + '</div>' +
-                        '<div style="display:flex; flex-direction:column; gap:12px; align-items:center;">' +
-                            '<div class="full-start__button selector fx-retry-auto" style="width:250px; background: #3b82f6;"><span>Повторить поиск</span></div>' +
-                            '<div class="full-start__button selector fx-retry-proxy" style="width:250px; background: #3d4450;"><span>Сменить прокси</span></div>' +
+                        '<div class="flex" style="display:flex; flex-direction:column; gap:12px; align-items:center;">' +
+                            '<div class="full-start__button selector fx-retry-proxy" style="width:250px; background: #3d4450;"><span>Переключить Прокси</span></div>' +
+                            '<div class="full-start__button selector fx-retry-mirror" style="width:250px; background: #2d3440;"><span>Сменить Зеркало API</span></div>' +
                         '</div>' +
                     '</div>'
                 );
                 
-                err_html.find('.fx-retry-auto').on('hover:enter', function() {
-                    retryCount = 0;
-                    _this.load(lastPath);
-                });
-
                 err_html.find('.fx-retry-proxy').on('hover:enter', function() {
                     currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
                     Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx);
-                    retryCount = 0;
+                    _this.load(lastPath);
+                });
+
+                err_html.find('.fx-retry-mirror').on('hover:enter', function() {
+                    currentMirrorIdx = (currentMirrorIdx + 1) % API_MIRRORS.length;
+                    Lampa.Storage.set('fx_nexus_mirror_idx', currentMirrorIdx);
                     _this.load(lastPath);
                 });
 
@@ -173,14 +161,13 @@
 
                 var filters = $dom.find('.videos__button, .selector[data-json*="link"]');
                 if (filters.length > 0) {
-                    var filter_wrap = $('<div class="category-full__external" style="margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 8px; padding: 0 10px;"></div>');
+                    var filter_wrap = $('<div class="category-full__external" style="margin-bottom: 30px; display: flex; flex-wrap: wrap; gap: 10px; padding: 0 10px;"></div>');
                     filters.each(function() {
                         try {
                             var json = JSON.parse($(this).attr('data-json'));
-                            var f_btn = $('<div class="full-start__button selector" style="padding: 10px 15px; height: auto;"><span>' + $(this).text().trim() + '</span></div>');
+                            var f_btn = $('<div class="full-start__button selector"><span>' + $(this).text().trim() + '</span></div>');
                             f_btn.on('hover:enter', function() { 
                                 var path = json.url.split('fxapi')[1] || '';
-                                retryCount = 0;
                                 _this.load('/lite/fxapi' + path); 
                             });
                             filter_wrap.append(f_btn);
@@ -197,9 +184,9 @@
                         var quality = json.maxquality || 'HD';
                         
                         var item_html = $(
-                            '<div class="category-full__item selector" style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 1px solid rgba(255,255,255,0.05);">' +
-                                '<div style="font-size: 1.1em; flex: 1; margin-right: 10px;">' + title + '</div>' +
-                                '<div style="background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); padding: 2px 8px; border-radius: 4px; font-size: 0.7em; font-weight: bold; color: #60a5fa;">' + quality + '</div>' +
+                            '<div class="category-full__item selector" style="display: flex; justify-content: space-between; align-items: center; padding: 18px 25px; border-bottom: 1px solid rgba(255,255,255,0.08);">' +
+                                '<div class="category-full__item-title" style="font-size: 1.25em; font-weight: 500;">' + title + '</div>' +
+                                '<div class="category-full__item-quality" style="opacity: 0.8; background: rgba(255,255,255,0.12); padding: 4px 10px; border-radius: 6px; font-size: 0.8em; font-weight: bold; color: #fff;">' + quality + '</div>' +
                             '</div>'
                         );
 
@@ -213,7 +200,7 @@
                 });
 
                 if (items_count === 0 && filters.length === 0) {
-                    _this.showError('Контент не найден.');
+                    _this.showError('Контент не найден. Попробуйте сменить прокси или зеркало.');
                 } else {
                     _this.start();
                 }
@@ -265,11 +252,8 @@
 
                     if (existingBtn.length && !existingBtn.hasClass('fx-nexus-v10')) existingBtn.before(btn);
                     else if (container.length) container.prepend(btn);
-                    
-                    var current = Lampa.Controller.enabled();
-                    if (current && (current.name == 'full_start' || current.name == 'full_descr')) {
-                         Lampa.Controller.toggle(current.name);
-                    }
+
+                    if (Lampa.Controller.toggle) Lampa.Controller.toggle('full_start');
                 };
 
                 inject();
