@@ -3,9 +3,10 @@
 
     /**
      * Filmix Nexus (Legacy Support)
-     * - Системное окно фильтра (Lampa.Select), как на скриншотах
+     * - Системное окно фильтра (Lampa.Select)
      * - Отдельно сезоны и переводы
-     * - Запоминание последнего изменённого пункта (чек в корневом окне)
+     * - Чек в корневом окне на последнем изменённом пункте
+     * - Фикс: убран jQuery-селектор с кавычками (Syntax error, unrecognized expression)
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -86,32 +87,37 @@
             var savedVoiceIdx = parseInt(Lampa.Storage.get('fx_nexus_voice_idx', '0'));
             if (isNaN(savedVoiceIdx) || savedVoiceIdx < 0) savedVoiceIdx = 0;
 
-            // 'season' | 'voice' (что меняли последним — на том и чек в корневом окне)
-            var last = Lampa.Storage.get('fx_nexus_last_filter', 'season');
+            var last = Lampa.Storage.get('fx_nexus_last_filter', 'season'); // 'season' | 'voice'
 
-            // СЕЗОНЫ: .videos__item.videos__season -> method:link
-            $dom.find('.videos__item.videos__season').each(function () {
+            // Сезоны: строго по классу videos__season
+            $dom.find('.videos__item.videos__season[data-json]').each(function () {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
-                    seasons.push({
-                        title: ($(this).find('.videos__season-title').text().trim() || $(this).text().trim()),
-                        url: json.url
-                    });
+                    if (json && json.method === 'link' && json.url) {
+                        seasons.push({
+                            title: ($(this).find('.videos__season-title').text().trim() || $(this).text().trim()),
+                            url: json.url
+                        });
+                    }
                 } catch (e) {}
             });
 
-            // ПЕРЕВОДЫ: .videos__button -> method:link
-            $dom.find('.videos__button').each(function () {
+            // Переводы: строго по videos__button
+            $dom.find('.videos__button[data-json]').each(function () {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
-                    voices.push({ title: $(this).text().trim(), url: json.url });
+                    if (json && json.method === 'link' && json.url) {
+                        voices.push({ title: $(this).text().trim(), url: json.url });
+                    }
                 } catch (e) {}
             });
 
-            // ВИДЕО/СЕРИИ: method:play
-            $dom.find('.videos__item.videos__movie, .selector[data-json*="\"method\":\"play\""]').each(function () {
+            // Видео: парсим JSON и берём method === 'play' без сложных CSS-селекторов
+            $dom.find('.videos__item[data-json]').each(function () {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
+                    if (!json || json.method !== 'play' || !json.url) return;
+
                     items.push({
                         title: $(this).find('.videos__item-title').text().trim() || json.title || 'Видео',
                         quality: json.maxquality || 'HD',
@@ -120,7 +126,7 @@
                 } catch (e) {}
             });
 
-            // Если ответ — только список сезонов, то автоматически идём в сохранённый сезон
+            // Если пришли только сезоны — сразу уходим в выбранный сезон
             if (!items.length && seasons.length && !voices.length) {
                 if (savedSeasonIdx >= seasons.length) savedSeasonIdx = 0;
                 Lampa.Storage.set('fx_nexus_season_idx', String(savedSeasonIdx));
@@ -128,7 +134,6 @@
                 return;
             }
 
-            // Нормализация индексов
             if (savedSeasonIdx >= seasons.length) savedSeasonIdx = 0;
             if (savedVoiceIdx >= voices.length) savedVoiceIdx = 0;
 
@@ -236,7 +241,6 @@
                     Lampa.Player.play({ url: item.url, title: item.title, movie: movie });
                 };
 
-                // ВАЖНО: системное окно (Select), а не правая панель
                 interaction.onFilter = function () {
                     openSystemFilterSelect();
                 };
@@ -250,7 +254,6 @@
 
                 interaction.content(items);
             } else {
-                // Fallback, если нет Interaction
                 Lampa.Select.show({
                     title: (movie.title || movie.name || 'Filmix'),
                     items: items.map(function (i) { return { title: i.title + ' [' + i.quality + ']', value: i }; }),
