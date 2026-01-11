@@ -1,6 +1,12 @@
 (function () {
     'use strict';
 
+    /**
+     * Filmix Nexus (Legacy Support) v2.3.6
+     * - ИСПРАВЛЕНО: Ошибка сети 503 через автоматическую ротацию прокси
+     * - ИСПРАВЛЕНО: Сохранение последнего рабочего прокси в Lampa.Storage
+     * - ОБНОВЛЕНО: Новый список прокси (swo.js)
+     */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
         window.filmix_nexus_loaded = true;
@@ -18,15 +24,16 @@
             'https://cors557.deno.dev/'
         ];
 
-        var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0')) || 0;
+        // Загружаем сохраненный индекс прокси или начинаем с 0
+        var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0'));
+        if (isNaN(currentProxyIdx) || currentProxyIdx >= PROXIES.length) currentProxyIdx = 0;
 
         function sign(url) {
-            if (!url) return '';
-            var signed = url + '';
-            if (signed.indexOf('uid=') == -1) signed = Lampa.Utils.addUrlComponent(signed, 'uid=' + WORKING_UID);
-            if (signed.indexOf('showy_token=') == -1) signed = Lampa.Utils.addUrlComponent(signed, 'showy_token=' + WORKING_TOKEN);
-            if (signed.indexOf('rjson=') == -1) signed = Lampa.Utils.addUrlComponent(signed, 'rjson=False');
-            return signed;
+            url = url + '';
+            if (url.indexOf('uid=') == -1) url = Lampa.Utils.addUrlComponent(url, 'uid=' + WORKING_UID);
+            if (url.indexOf('showy_token=') == -1) url = Lampa.Utils.addUrlComponent(url, 'showy_token=' + WORKING_TOKEN);
+            if (url.indexOf('rjson=') == -1) url = Lampa.Utils.addUrlComponent(url, 'rjson=False');
+            return url;
         }
 
         function toggleLoading(show) {
@@ -36,91 +43,92 @@
             } catch (e) {}
         }
 
-        function parseHtmlToItems(htmlString) {
-            var items = [];
-            var $dom = $('<div>' + htmlString + '</div>');
+        function loadFilmix(movie) {
+            var network = new (Lampa.Request || Lampa.Reguest)();
+            var id = movie.kinopoisk_id || movie.kp_id || movie.id;
+            var url = BASE_DOMAIN + '/lite/fxapi?kinopoisk_id=' + id;
+            if (!movie.kinopoisk_id && !movie.kp_id) url = BASE_DOMAIN + '/lite/fxapi?postid=' + id;
 
-            $dom.find('.selector, .videos__item, .videos__button, .videos__season').each(function() {
-                var el = $(this);
-                var jsonStr = el.attr('data-json');
-                if(!jsonStr) return;
+            var attempts = 0;
+            var fetchWithRetry = function(targetUrl) {
+                var proxy = PROXIES[currentProxyIdx];
+                toggleLoading(true);
 
+                network.native(proxy + sign(targetUrl), function (res) {
+                    toggleLoading(false);
+                    // Запоминаем рабочий прокси для текущей сессии
+                    Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx.toString());
+                    displayFilmix(res, movie, fetchWithRetry);
+                }, function (err) {
+                    attempts++;
+                    console.log('Filmix: Proxy ' + proxy + ' failed. Switching...');
+                    
+                    if (attempts < PROXIES.length) {
+                        // Ротация прокси: берем следующий из списка
+                        currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
+                        fetchWithRetry(targetUrl);
+                    } else {
+                        toggleLoading(false);
+                        Lampa.Noty.show('Filmix: Ошибка сети (все прокси недоступны)');
+                    }
+                }, false, { dataType: 'text' });
+            };
+
+            fetchWithRetry(url);
+        }
+
+        function displayFilmix(res, movie, fetchCallback) {
+            var $dom = $('<div>' + res + '</div>');
+            var items = [], filters = [];
+
+            $dom.find('.videos__button, .selector[data-json*="link"]').each(function() {
                 try {
-                    var json = JSON.parse(jsonStr);
-                    var link = json.url || json.play;
-                    var title = el.find('.videos__item-title, .videos__season-title, .videos__button-title').text().trim() || 
-                                el.text().trim() || 
-                                json.title || 'Видео';
+                    var json = JSON.parse($(this).attr('data-json'));
+                    filters.push({ title: $(this).text().trim(), url: json.url });
+                } catch(e) {}
+            });
 
+            $dom.find('.videos__item, .selector[data-json*="play"]').each(function() {
+                try {
+                    var json = JSON.parse($(this).attr('data-json'));
                     items.push({
-                        title: title,
-                        subtitle: json.quality || json.maxquality || '',
-                        url: link,
-                        is_folder: (json.method === 'link'),
-                        template: 'selectbox_item'
+                        title: $(this).find('.videos__item-title').text().trim() || json.title || 'Видео',
+                        quality: json.maxquality || 'HD',
+                        url: sign(json.url)
                     });
                 } catch(e) {}
             });
-            return items;
-        }
 
-        function loadFilmix(movie, targetUrl, stepTitle) {
-            var url = targetUrl || (BASE_DOMAIN + '/lite/fxapi?' + (movie.kinopoisk_id ? 'kinopoisk_id=' + movie.kinopoisk_id : 'postid=' + movie.id));
-            
-            toggleLoading(true);
+            var showList = function() {
+                Lampa.Select.show({
+                    title: movie.title || movie.name || 'Filmix',
+                    items: items.map(function(i) { return { title: i.title + ' ['+i.quality+']', value: i }; }),
+                    onSelect: function(item) {
+                        Lampa.Player.play({ url: item.value.url, title: item.value.title, movie: movie });
+                    },
+                    onBack: function() {
+                        if (filters.length > 0) loadFilmix(movie); // Возврат к фильтрам, если они были
+                        else Lampa.Controller.toggle('full_start');
+                    }
+                });
+            };
 
-            var network = new (Lampa.Request || Lampa.Reguest)();
-            var proxy = PROXIES[currentProxyIdx];
-            var finalUrl = proxy + sign(url);
-
-            network.native(finalUrl, function (res) {
-                toggleLoading(false);
-                var items = parseHtmlToItems(res);
-
-                if (items.length > 0) {
-                    var options = {
-                        title: stepTitle || (movie.title || 'Filmix'),
-                        items: items,
-                        onSelect: function(item) {
-                            if (item.is_folder) {
-                                // Рекурсивный вызов: открываем следующий уровень (озвучки/серии)
-                                loadFilmix(movie, item.url, item.title);
-                            } else {
-                                var playUrl = sign(item.url);
-                                Lampa.Player.play({
-                                    url: playUrl,
-                                    title: item.title,
-                                    movie: movie
-                                });
-                                Lampa.Player.playlist([{
-                                    url: playUrl,
-                                    title: item.title
-                                }]);
-                            }
-                        },
-                        onBack: function() {
-                            Lampa.Controller.toggle('full');
-                        }
-                    };
-                    
-                    // Важный момент: Lampa.Select.show автоматически обновляет содержимое, 
-                    // если вызывается повторно при активном контроллере select.
-                    Lampa.Select.show(options);
-                    
-                } else {
-                    Lampa.Noty.show('Filmix: Данные не найдены');
-                }
-            }, function () {
-                toggleLoading(false);
-                currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
-                Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx.toString());
-                loadFilmix(movie, url, stepTitle);
-            }, false, { dataType: 'text' });
+            // Если есть фильтры (сезоны/озвучки), показываем их. 
+            // При выборе фильтра вызываем fetchCallback, который вернет управление сюда же для показа серий.
+            if (filters.length > 0 && items.length === 0) {
+                Lampa.Select.show({
+                    title: 'Выбор варианта',
+                    items: filters.map(function(f) { return { title: f.title, value: f.url }; }),
+                    onSelect: function(item) { fetchCallback(item.value); },
+                    onBack: function() { Lampa.Controller.toggle('full_start'); }
+                });
+            } else {
+                showList();
+            }
         }
 
         function addButton(render, movie) {
             if (render.find('.fx-nexus-native').length) return;
-            // Ищем стандартные кнопки, чтобы пристроиться рядом
             var target = render.find('.view--torrent, .view--online, .button--play, .full-start__buttons').last();
             if (target.length) {
                 var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Filmix</span></div>');
@@ -131,19 +139,16 @@
                 if(target.hasClass('full-start__buttons')) target.append(btn);
                 else target.after(btn);
 
-                // Обновляем навигацию контроллера, чтобы кнопка стала кликабельной
                 if (Lampa.Controller.toggle) Lampa.Controller.toggle(Lampa.Controller.enabled().name);
             }
         }
 
-        // Слушатели отрисовки карточки
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complete' || e.type == 'complite') {
                 addButton(e.object.activity.render(), e.data.movie);
             }
         });
 
-        // Дополнительная проверка при переключении вкладок внутри карточки
         Lampa.Listener.follow('app', function (e) {
             if (e.type == 'ready') {
                 var active = Lampa.Activity.active();
