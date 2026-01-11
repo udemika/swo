@@ -157,7 +157,8 @@
             if (render.find('.fx-nexus-native').length) return;
             var target = render.find('.view--torrent, .view--online, .button--play, .full-start__buttons').last();
             if (target.length) {
-                var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Filmix</span></div>');
+                // Изменено название и добавлен SVG значок play
+                var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width:1.5em; height:1.5em; vertical-align:middle; margin-right:0.4em;"><path d="M8 5v14l11-7z"/></svg><span>FILMIX ULTRA</span></div>');
                 btn.on('hover:enter', function () { 
                     loadFilmix(movie); 
                 });
