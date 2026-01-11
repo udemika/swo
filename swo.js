@@ -15,14 +15,13 @@
             'https://apn10.akter-black.com/'
         ];
 
-        var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0')) || 0;
+        var currentProxyIdx = 0;
 
         function toggleLoading(show) {
             try {
                 if (typeof Lampa.Loading === 'function') Lampa.Loading(show);
-                else if (Lampa.Loading) {
-                    if (show && Lampa.Loading.show) Lampa.Loading.show();
-                    else if (!show && Lampa.Loading.hide) Lampa.Loading.hide();
+                else if (Lampa.Loading && Lampa.Loading.show) {
+                    show ? Lampa.Loading.show() : Lampa.Loading.hide();
                 }
             } catch(e) {}
         }
@@ -37,27 +36,31 @@
             return signed;
         }
 
+        // УЛУЧШЕННЫЙ ПАРСЕР: создает объекты, которые ТОЧНО понимает компонент interaction
         function parseToItems(htmlString) {
             var items = [];
             var $dom = $('<div>' + htmlString + '</div>');
+            
             $dom.find('.selector, .videos__item, .videos__button').each(function() {
                 var el = $(this);
                 var jsonStr = el.attr('data-json');
                 if(!jsonStr) return;
                 try {
                     var json = JSON.parse(jsonStr);
-                    var isFolder = (json.method === 'link');
                     var title = el.find('.videos__item-title, .videos__button-title').text().trim() || el.text().trim() || json.title;
                     
                     items.push({
                         title: title,
-                        subtitle: json.quality || json.maxquality || '',
+                        quality: json.quality || json.maxquality || '',
                         url: json.url || json.play,
-                        is_folder: isFolder,
-                        template: 'selectbox_item'
+                        is_folder: (json.method === 'link'),
+                        // Обязательные поля для компонента interaction
+                        display_title: title,
+                        category: json.method === 'link' ? 'Папка' : 'Видео'
                     });
                 } catch(e) {}
             });
+            console.log('Swo Debug: Распарсено элементов:', items.length);
             return items;
         }
 
@@ -73,21 +76,26 @@
                 var items = parseToItems(res);
 
                 if (items.length > 0) {
-                    // ВМЕСТО Select.show ИСПОЛЬЗУЕМ Activity.push для системного окна
+                    // Создаем активность
                     Lampa.Activity.push({
-                        title: 'Filmix: ' + movie.title,
-                        component: 'interaction', // Это создаст окно с плиткой и фильтром
+                        title: movie.title || 'Filmix',
+                        component: 'interaction',
                         object: {
                             create: function() {
-                                this.activity.content(items);
+                                // Важно: очищаем и добавляем контент правильно
+                                this.activity.loader(false); 
+                                this.activity.render().find('.interaction__content').empty();
+                                this.activity.append(items); // Используем append вместо content
                             },
                             onItem: function(item) {
                                 if (item.is_folder) {
-                                    // Переход по уровням (Сезон -> Озвучка -> Серии)
                                     loadFilmix(movie, item.url);
                                 } else {
-                                    // Запуск плеера
-                                    var video = { url: sign(item.url), title: item.title, movie: movie };
+                                    var video = { 
+                                        url: sign(item.url), 
+                                        title: item.title, 
+                                        movie: movie 
+                                    };
                                     Lampa.Player.play(video);
                                     Lampa.Player.playlist([video]);
                                 }
@@ -98,7 +106,7 @@
                         }
                     });
                 } else {
-                    Lampa.Noty.show('Ничего не найдено');
+                    Lampa.Noty.show('Данные не найдены');
                 }
             }, function () {
                 toggleLoading(false);
