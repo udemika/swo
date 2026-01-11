@@ -1,11 +1,11 @@
+
 (function () {
     'use strict';
 
     /**
-     * Filmix Nexus (Legacy Support) v2.3.4
-     * - Исправлена ошибка: Lampa.Interaction is not a constructor
-     * - Добавлен fallback на Lampa.Select для старых версий
-     * - Оптимизирован сетевой запрос (убраны лишние CORS вызовы)
+     * Filmix Nexus (Legacy Support) v2.3.5
+     * - ИСПРАВЛЕНО: Ошибка сети 503 через автоматическую ротацию прокси
+     * - ИСПРАВЛЕНО: Сохранение последнего рабочего прокси в Lampa.Storage
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -21,6 +21,7 @@
             'https://corsproxy.io/?'
         ];
 
+        // Загружаем сохраненный индекс прокси или начинаем с 0
         var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0'));
 
         function sign(url) {
@@ -44,18 +45,32 @@
             var url = BASE_DOMAIN + '/lite/fxapi?kinopoisk_id=' + id;
             if (!movie.kinopoisk_id && !movie.kp_id) url = BASE_DOMAIN + '/lite/fxapi?postid=' + id;
 
-            var fetch = function(targetUrl) {
+            var attempts = 0;
+            var fetchWithRetry = function(targetUrl) {
+                var proxy = PROXIES[currentProxyIdx];
                 toggleLoading(true);
-                network.native(PROXIES[currentProxyIdx] + sign(targetUrl), function (res) {
+
+                network.native(proxy + sign(targetUrl), function (res) {
                     toggleLoading(false);
-                    displayFilmix(res, movie, fetch);
-                }, function () {
-                    toggleLoading(false);
-                    Lampa.Noty.show('Filmix: Ошибка сети');
+                    // Запоминаем рабочий прокси для текущей сессии
+                    Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx.toString());
+                    displayFilmix(res, movie, fetchWithRetry);
+                }, function (err) {
+                    attempts++;
+                    console.log('Filmix: Proxy ' + proxy + ' failed. Switching...');
+                    
+                    if (attempts < PROXIES.length) {
+                        // Ротация прокси: берем следующий из списка
+                        currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
+                        fetchWithRetry(targetUrl);
+                    } else {
+                        toggleLoading(false);
+                        Lampa.Noty.show('Filmix: Ошибка сети (все прокси недоступны)');
+                    }
                 }, false, { dataType: 'text' });
             };
 
-            fetch(url);
+            fetchWithRetry(url);
         }
 
         function displayFilmix(res, movie, fetchCallback) {
@@ -80,7 +95,6 @@
                 } catch(e) {}
             });
 
-            // ПРОВЕРКА НАЛИЧИЯ INTERACTION
             if (typeof Lampa.Interaction !== 'undefined') {
                 var interaction = new Lampa.Interaction({
                     card: movie,
@@ -108,7 +122,6 @@
 
                 interaction.content(items);
             } else {
-                // FALLBACK: Используем нативные списки Lampa.Select, если Interaction сломан
                 var showList = function() {
                     Lampa.Select.show({
                         title: movie.title || movie.name || 'Filmix',
