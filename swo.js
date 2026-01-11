@@ -1,12 +1,6 @@
 (function () {
     'use strict';
 
-    /**
-     * Filmix Nexus (Legacy Support) v2.3.8
-     * - ИСПРАВЛЕНО: "Script error" при открытии карточки
-     * - ИСПРАВЛЕНО: Возвращена кнопка Filmix
-     * - ОБНОВЛЕНО: Принудительный запуск системного окна (как на скриншоте)
-     */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
         window.filmix_nexus_loaded = true;
@@ -49,6 +43,8 @@
             if (!movie.kinopoisk_id && !movie.kp_id) url = BASE_DOMAIN + '/lite/fxapi?postid=' + id;
 
             var attempts = 0;
+            
+            // Рекурсивная функция загрузки (используется и для первого входа, и для клика по папкам)
             var fetchWithRetry = function(targetUrl) {
                 var proxy = PROXIES[currentProxyIdx];
                 toggleLoading(true);
@@ -74,114 +70,102 @@
             fetchWithRetry(url);
         }
 
-        // Эта функция теперь всегда вызывает системное окно (Interaction)
+        // --- ГЛАВНОЕ ИЗМЕНЕНИЕ: Формирование системного списка ---
         function displayFilmix(res, movie, fetchCallback) {
-            try {
-                var $dom = $('<div>' + res + '</div>');
-                var items = [], filters = [];
+            var $dom = $('<div>' + res + '</div>');
+            var items = [];
 
-                // Сбор фильтров
-                $dom.find('.videos__button, .selector[data-json*="link"]').each(function() {
-                    try {
-                        var json = JSON.parse($(this).attr('data-json'));
-                        filters.push({ title: $(this).text().trim(), url: json.url });
-                    } catch(e) {}
-                });
-
-                // Сбор видео
-                $dom.find('.videos__item, .selector[data-json*="play"]').each(function() {
-                    try {
-                        var json = JSON.parse($(this).attr('data-json'));
-                        items.push({
-                            title: $(this).find('.videos__item-title').text().trim() || json.title || 'Видео',
-                            quality: json.maxquality || 'HD',
-                            url: sign(json.url),
-                            subtitle: json.maxquality || '' // Отображение качества под названием
-                        });
-                    } catch(e) {}
-                });
-
-                // Проверка наличия компонента Interaction
-                if (typeof Lampa.Interaction !== 'undefined') {
-                    var interaction = new Lampa.Interaction({
-                        card: movie,
-                        filter: filters.length > 0
+            // 1. Собираем Папки (Сезоны, Переводы) - помечаем их как folder
+            $dom.find('.videos__button, .selector[data-json*="link"]').each(function() {
+                try {
+                    var json = JSON.parse($(this).attr('data-json'));
+                    items.push({
+                        title: $(this).text().trim(),
+                        url: json.url,
+                        type: 'folder' // Это папка, ее надо открыть
                     });
+                } catch(e) {}
+            });
 
-                    interaction.onPlay = function(item) {
-                        Lampa.Player.play({ url: item.url, title: item.title, movie: movie });
-                    };
-
-                    interaction.onFilter = function() {
-                        Lampa.Select.show({
-                            title: 'Фильтр',
-                            items: filters.map(function(f) { return { title: f.title, value: f.url }; }),
-                            onSelect: function(item) { fetchCallback(item.value); },
-                            onBack: function() { 
-                                // Просто закрываем select, активность остается
-                            }
-                        });
-                    };
-
-                    Lampa.Activity.push({
-                        component: 'interaction',
-                        title: 'Filmix',
-                        object: interaction,
-                        onBack: function() { Lampa.Activity.backward(); }
+            // 2. Собираем Видео (Серии, Фильмы) - помечаем их как video
+            $dom.find('.videos__item, .selector[data-json*="play"]').each(function() {
+                try {
+                    var json = JSON.parse($(this).attr('data-json'));
+                    items.push({
+                        title: $(this).find('.videos__item-title').text().trim() || json.title || 'Видео',
+                        quality: json.maxquality || 'HD',
+                        url: sign(json.url),
+                        type: 'video', // Это видео, его надо играть
+                        subtitle: json.quality ? json.quality : (json.maxquality || '')
                     });
+                } catch(e) {}
+            });
 
-                    interaction.content(items);
-                } else {
-                    // Резервный вариант, если версия Lampa очень старая
-                    Lampa.Noty.show('Обновите Lampa для нового интерфейса');
-                    var showList = function() {
-                        Lampa.Select.show({
-                            title: 'Filmix',
-                            items: items.map(function(i) { return { title: i.title + ' ['+i.quality+']', value: i }; }),
-                            onSelect: function(item) {
-                                Lampa.Player.play({ url: item.value.url, title: item.value.title, movie: movie });
-                            }
-                        });
-                    };
-                    showList();
-                }
-
-            } catch (e) {
-                console.error('Filmix Display Error:', e);
-                Lampa.Noty.show('Ошибка отображения Filmix');
+            if (items.length === 0) {
+                Lampa.Noty.show('Filmix: Видео не найдено');
+                return;
             }
+
+            // Создаем объект Activity вручную, чтобы не зависеть от версии Lampa
+            var activityObject = {
+                create: function() {
+                    // Используем стандартный метод activity.content для отрисовки списка
+                    // Это создает тот самый вид "как на скриншоте"
+                    this.activity.content(items);
+                    
+                    // Если список пуст или грузится
+                    if (!items.length) this.activity.empty();
+                },
+                // Обработчик нажатия (enter/ok)
+                onItem: function(item) {
+                    if (item.type === 'folder') {
+                        // Если это папка (сезон/перевод), загружаем её содержимое
+                        fetchCallback(item.url);
+                    } else {
+                        // Если это видео, играем
+                        Lampa.Player.play({
+                            url: item.url,
+                            title: item.title,
+                            movie: movie
+                        });
+                    }
+                }
+            };
+
+            // Открываем полноценное системное окно
+            Lampa.Activity.push({
+                url: '',
+                title: 'Filmix',
+                component: 'interaction', // Указываем системный компонент
+                page: 1,
+                object: activityObject, // Передаем нашу логику
+                onBack: function() {
+                    Lampa.Activity.backward();
+                }
+            });
         }
 
-        // Слушатель событий (возвращен к оригинальному виду для стабильности кнопки)
         Lampa.Listener.follow('full', function (e) {
-            try {
-                if (e.type == 'complete' || e.type == 'complite') {
-                    var render = e.object.activity.render();
-                    if (!render) return;
+            if (e.type == 'complete' || e.type == 'complite') {
+                var render = e.object.activity.render();
+                var inject = function() {
+                    if (render.find('.fx-nexus-native').length) return;
+                    
+                    var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Смотреть Filmix</span></div>');
+                    btn.on('hover:enter', function () {
+                        loadFilmix(e.data.movie);
+                    });
 
-                    var inject = function() {
-                        if (render.find('.fx-nexus-native').length) return;
+                    var container = render.find('.full-start__buttons, .full-start__actions, .full-start');
+                    var watchBtn = render.find('.watch-button, .full-start__button').first();
 
-                        var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Смотреть Filmix</span></div>');
-                        btn.on('hover:enter', function () {
-                            loadFilmix(e.data.movie);
-                        });
-
-                        var container = render.find('.full-start__buttons, .full-start__actions, .full-start');
-                        var watchBtn = render.find('.watch-button, .full-start__button').first();
-
-                        if (watchBtn.length) watchBtn.before(btn);
-                        else if (container.length) container.prepend(btn);
-
-                        if (Lampa.Controller.toggle) Lampa.Controller.toggle('full_start');
-                    };
-
-                    inject();
-                    setTimeout(inject, 200);
-                }
-            } catch (err) {
-                // Игнорируем ошибки отрисовки кнопки, чтобы не вешать интерфейс
-                console.log('Filmix Button Inject Error', err);
+                    if (watchBtn.length) watchBtn.before(btn);
+                    else if (container.length) container.prepend(btn);
+                    
+                    if (Lampa.Controller.toggle) Lampa.Controller.toggle('full_start');
+                };
+                inject();
+                setTimeout(inject, 200);
             }
         });
     }
