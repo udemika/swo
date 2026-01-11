@@ -53,19 +53,17 @@
             var $dom = $('<div>' + res + '</div>');
             var items = [];
 
-            // ПАРСИНГ: Мы помечаем элементы как 'folder' (сезоны) или 'video' (серии/фильмы)
             $dom.find('.videos__button, .videos__item, .selector').each(function() {
                 var el = $(this);
                 var jsonStr = el.attr('data-json');
                 if(!jsonStr) return;
                 try {
                     var json = JSON.parse(jsonStr);
-                    var isFolder = !!json.url; // Если есть URL в JSON - это переход в папку
-                    
+                    var isFolder = !!json.url && !json.play; 
                     items.push({
                         title: el.text().trim() || json.title || 'Видео',
                         quality: json.maxquality || '',
-                        url: isFolder ? json.url : sign(json.url || ''),
+                        url: isFolder ? json.url : sign(json.url || json.play || ''),
                         is_folder: isFolder,
                         template: 'selectbox_item'
                     });
@@ -74,67 +72,57 @@
 
             if (!items.length) return Lampa.Noty.show('Контент не найден');
 
-            // ВЫЗОВ СИСТЕМНОГО ОКНА (как на скриншоте и в on.js)
             Lampa.Activity.push({
                 title: 'Filmix',
                 component: 'interaction',
                 object: {
-                    create: function() { 
-                        this.activity.content(items); 
-                    },
+                    create: function() { this.activity.content(items); },
                     onItem: function(item) {
-                        if (item.is_folder) {
-                            // Если папка (сезон) - загружаем список серий в это же окно
-                            loadFilmix(movie, item.url);
-                        } else {
-                            // Если видео - играем
-                            Lampa.Player.play({ 
-                                url: item.url, 
-                                title: item.title, 
-                                movie: movie 
-                            });
-                        }
+                        if (item.is_folder) loadFilmix(movie, item.url);
+                        else Lampa.Player.play({ url: item.url, title: item.title, movie: movie });
                     },
-                    onBack: function() { 
-                        Lampa.Activity.backward(); 
-                    }
+                    onBack: function() { Lampa.Activity.backward(); }
                 }
             });
         }
 
-        // ДОБАВЛЕНИЕ КНОПКИ: Ищем контейнер более агрессивно, как в on.js
-        function addButton(e) {
-            if (e.render.parent().find('.fx-nexus-native').length) return;
+        // --- ЛОГИКА ДЛЯ ШТОРКИ ---
+        function injectButton(render, movie) {
+            if (render.find('.fx-nexus-native').length) return;
 
-            var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Смотреть Filmix</span></div>');
+            // Ищем кнопку Торренты внутри шторки
+            var target = render.find('.view--torrent, .full-start__button').first();
             
-            btn.on('hover:enter', function () {
-                loadFilmix(e.movie);
-            });
-
-            // Пробуем вставить ПОСЛЕ кнопки торрентов (как в on.js)
-            if (e.render.hasClass('selector')) {
-                e.render.after(btn);
-            } else {
-                // Если не нашли конкретную кнопку, пихаем в контейнер кнопок
-                e.render.append(btn);
+            if (target.length) {
+                var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Filmix</span></div>');
+                btn.on('hover:enter', function () {
+                    // Закрываем шторку перед открытием Filmix (опционально)
+                    // Lampa.Activity.backward(); 
+                    loadFilmix(movie);
+                });
+                
+                target.after(btn);
+                
+                // Обновляем контроллер, чтобы кнопка стала кликабельной
+                if (Lampa.Controller.toggle) Lampa.Controller.toggle(Lampa.Controller.enabled().name);
             }
-
-            if (Lampa.Controller.toggle) Lampa.Controller.toggle('full_start');
         }
 
+        // Следим за всеми изменениями в интерфейсе
+        Lampa.Listener.follow('app', function (e) {
+            if (e.type == 'ready') {
+                // Если открылась шторка выбора (online/torrents)
+                var active = Lampa.Activity.active();
+                if (active && (active.component == 'full_start' || active.component == 'select')) {
+                    injectButton(active.activity.render(), active.card || active.object.movie);
+                }
+            }
+        });
+
+        // Дополнительный мониторинг через Listener full для обычных карточек
         Lampa.Listener.follow('full', function (e) {
             if (e.type == 'complete' || e.type == 'complite') {
-                var root = e.object.activity.render();
-                // Ищем любую кнопку в блоке действий, чтобы привязаться к ней
-                var target = root.find('.view--torrent, .view--online, .full-start__button').first();
-                if(target.length) {
-                    addButton({ render: target, movie: e.data.movie });
-                } else {
-                    // Если кнопок вообще нет, ищем сам контейнер
-                    var container = root.find('.full-start__buttons, .full-start__actions');
-                    if(container.length) addButton({ render: container, movie: e.data.movie });
-                }
+                injectButton(e.object.activity.render(), e.data.movie);
             }
         });
     }
