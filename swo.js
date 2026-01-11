@@ -14,7 +14,7 @@
         var WORKING_UID = 'i8nqb9vw';
         var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
         var BASE_DOMAIN = 'http://showypro.com';
-        
+
         var PROXIES = [
             'https://cors.byskaz.ru/',
             'http://85.198.110.239:8975/',
@@ -62,7 +62,7 @@
                 }, function (err) {
                     attempts++;
                     console.log('Filmix: Proxy ' + proxy + ' failed. Switching...');
-                    
+
                     if (attempts < PROXIES.length) {
                         // Р РѕС‚Р°С†РёСЏ РїСЂРѕРєСЃРё: Р±РµСЂРµРј СЃР»РµРґСѓСЋС‰РёР№ РёР· СЃРїРёСЃРєР°
                         currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
@@ -79,42 +79,229 @@
 
         function displayFilmix(res, movie, fetchCallback) {
             var $dom = $('<div>' + res + '</div>');
-            var items = [], filters = [];
 
-            $dom.find('.videos__button, .selector[data-json*="link"]').each(function() {
+            // два независимых фильтра: сезон и перевод
+            var seasons = [], voices = [], items = [];
+
+            var savedSeasonIdx = parseInt(Lampa.Storage.get('fx_nexus_season_idx', '0'));
+            if (isNaN(savedSeasonIdx) || savedSeasonIdx < 0) savedSeasonIdx = 0;
+
+            var savedVoiceIdx = parseInt(Lampa.Storage.get('fx_nexus_voice_idx', '0'));
+            if (isNaN(savedVoiceIdx) || savedVoiceIdx < 0) savedVoiceIdx = 0;
+
+            // сезоны (как в твоём примере: .videos__item.videos__season + method:link)
+            $dom.find('.videos__item.videos__season').each(function() {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
-                    filters.push({ title: $(this).text().trim(), url: json.url });
-                } catch(e) {}
-            });
-
-            $dom.find('.videos__item, .selector[data-json*="play"]').each(function() {
-                try {
-                    var json = JSON.parse($(this).attr('data-json'));
-                    items.push({
-                        title: $(this).find('.videos__item-title').text().trim() || json.title || 'Р’РёРґРµРѕ',
-                        quality: json.maxquality || 'HD',
-                        url: sign(json.url)
+                    seasons.push({
+                        title: $(this).find('.videos__season-title').text().trim() || $(this).find('.videos__item-title').text().trim() || $(this).text().trim(),
+                        url: json.url
                     });
                 } catch(e) {}
             });
 
+            // переводы (как в твоём примере: .videos__button + method:link)
+            $dom.find('.videos__button').each(function() {
+                try {
+                    var json = JSON.parse($(this).attr('data-json'));
+                    voices.push({ title: $(this).text().trim(), url: json.url });
+                } catch(e) {}
+            });
+
+            // серии/видео (method:play)
+            $dom.find('.videos__item.videos__movie, .selector[data-json*="play"]').each(function() {
+                try {
+                    var json = JSON.parse($(this).attr('data-json'));
+
+                    var s = $(this).attr('s');
+                    var e = $(this).attr('e');
+
+                    var it = {
+                        title: $(this).find('.videos__item-title').text().trim() || json.title || 'Р’РёРґРµРѕ',
+                        quality: json.maxquality || 'HD',
+                        url: sign(json.url)
+                    };
+
+                    if (typeof s !== 'undefined') it.season = parseInt(s);
+                    if (typeof e !== 'undefined') it.episode = parseInt(e);
+
+                    items.push(it);
+                } catch(e) {}
+            });
+
+            // Если открыли карточку и получили только список сезонов — сразу уходим в выбранный сезон
+            if (!items.length && seasons.length && !voices.length) {
+                if (savedSeasonIdx >= seasons.length) savedSeasonIdx = 0;
+                Lampa.Storage.set('fx_nexus_season_idx', savedSeasonIdx.toString());
+                fetchCallback(seasons[savedSeasonIdx].url);
+                return;
+            }
+
+            // --- системная шторка фильтра (как в Online/Lampac) ---
+            function openSystemFilterPanel() {
+                if (!seasons.length && !voices.length) return;
+
+                // если в сборке нет Lampa.Filter — простой запасной вариант через Select
+                if (typeof Lampa.Filter === 'undefined') {
+                    var first = [];
+                    if (voices.length) first.push({ title: 'Перевод', value: 'voice' });
+                    if (seasons.length) first.push({ title: 'Сезон', value: 'season' });
+
+                    Lampa.Select.show({
+                        title: 'Фильтр',
+                        items: first,
+                        onSelect: function(a) {
+                            if (a.value == 'voice') {
+                                Lampa.Select.show({
+                                    title: 'Перевод',
+                                    items: voices.map(function(v, i){ return { title: v.title, value: i }; }),
+                                    onSelect: function(b){
+                                        var idx = b.value;
+                                        if (idx < 0) idx = 0;
+                                        if (idx >= voices.length) idx = 0;
+                                        savedVoiceIdx = idx;
+                                        Lampa.Storage.set('fx_nexus_voice_idx', savedVoiceIdx.toString());
+                                        fetchCallback(voices[savedVoiceIdx].url);
+                                    }
+                                });
+                            }
+                            if (a.value == 'season') {
+                                Lampa.Select.show({
+                                    title: 'Сезон',
+                                    items: seasons.map(function(s, i){ return { title: s.title, value: i }; }),
+                                    onSelect: function(b){
+                                        var idx = b.value;
+                                        if (idx < 0) idx = 0;
+                                        if (idx >= seasons.length) idx = 0;
+                                        savedSeasonIdx = idx;
+                                        Lampa.Storage.set('fx_nexus_season_idx', savedSeasonIdx.toString());
+                                        fetchCallback(seasons[savedSeasonIdx].url);
+                                    }
+                                });
+                            }
+                        }
+                    });
+                    return;
+                }
+
+                var enabled = Lampa.Controller.enabled().name;
+                var panel = new Lampa.Filter({});
+
+                var seasonIdx = savedSeasonIdx;
+                if (seasonIdx >= seasons.length) seasonIdx = 0;
+
+                var voiceIdx = savedVoiceIdx;
+                if (voiceIdx >= voices.length) voiceIdx = 0;
+
+                var select = [];
+
+                select.push({
+                    title: 'Сбросить фильтр',
+                    reset: true
+                });
+
+                if (voices.length) {
+                    select.push({
+                        title: 'Перевод',
+                        subtitle: (voices[voiceIdx] ? voices[voiceIdx].title : ''),
+                        stype: 'voice',
+                        items: voices.map(function(v, i) {
+                            return { title: v.title, selected: i === voiceIdx, index: i };
+                        })
+                    });
+                }
+
+                if (seasons.length) {
+                    select.push({
+                        title: 'Сезон',
+                        subtitle: (seasons[seasonIdx] ? seasons[seasonIdx].title : ''),
+                        stype: 'season',
+                        items: seasons.map(function(s, i) {
+                            return { title: s.title, selected: i === seasonIdx, index: i };
+                        })
+                    });
+                }
+
+                panel.set('filter', select);
+
+                panel.onBack = function () {
+                    Lampa.Controller.toggle(enabled);
+                };
+
+                panel.onSelect = function (type, a, b) {
+                    if (type == 'filter') {
+                        if (a && a.reset) {
+                            savedSeasonIdx = 0;
+                            savedVoiceIdx = 0;
+                            Lampa.Storage.set('fx_nexus_season_idx', '0');
+                            Lampa.Storage.set('fx_nexus_voice_idx', '0');
+
+                            setTimeout(function () { Lampa.Select.close(); }, 10);
+                            Lampa.Controller.toggle(enabled);
+
+                            // После сброса логично вернуться на выбранный сезон (или на первый),
+                            // чтобы заново отрисовать список переводов/серий.
+                            if (seasons.length && seasons[0] && seasons[0].url) fetchCallback(seasons[0].url);
+                            else if (voices.length && voices[0] && voices[0].url) fetchCallback(voices[0].url);
+                            return;
+                        }
+
+                        if (a && a.stype == 'season') {
+                            var idx = b && typeof b.index !== 'undefined' ? b.index : 0;
+                            if (idx < 0) idx = 0;
+                            if (idx >= seasons.length) idx = 0;
+
+                            savedSeasonIdx = idx;
+                            Lampa.Storage.set('fx_nexus_season_idx', savedSeasonIdx.toString());
+
+                            var url = seasons[savedSeasonIdx] ? seasons[savedSeasonIdx].url : '';
+
+                            setTimeout(function () { Lampa.Select.close(); }, 10);
+                            Lampa.Controller.toggle(enabled);
+
+                            if (url) fetchCallback(url);
+                            return;
+                        }
+
+                        if (a && a.stype == 'voice') {
+                            var idx = b && typeof b.index !== 'undefined' ? b.index : 0;
+                            if (idx < 0) idx = 0;
+                            if (idx >= voices.length) idx = 0;
+
+                            savedVoiceIdx = idx;
+                            Lampa.Storage.set('fx_nexus_voice_idx', savedVoiceIdx.toString());
+
+                            var url = voices[savedVoiceIdx] ? voices[savedVoiceIdx].url : '';
+
+                            setTimeout(function () { Lampa.Select.close(); }, 10);
+                            Lampa.Controller.toggle(enabled);
+
+                            if (url) fetchCallback(url);
+                            return;
+                        }
+                    }
+
+                    setTimeout(function () { Lampa.Select.close(); }, 10);
+                    Lampa.Controller.toggle(enabled);
+                };
+
+                panel.show('Фильтр', panel);
+            }
+            // -----------------------------------------------
+
             if (typeof Lampa.Interaction !== 'undefined') {
                 var interaction = new Lampa.Interaction({
                     card: movie,
-                    filter: filters.length > 0
+                    filter: (seasons.length > 0 || voices.length > 0)
                 });
 
                 interaction.onPlay = function(item) {
                     Lampa.Player.play({ url: item.url, title: item.title, movie: movie });
                 };
 
+                // Открываем шторку фильтра как в Online/Lampac
                 interaction.onFilter = function() {
-                    Lampa.Select.show({
-                        title: 'Р¤РёР»СЊС‚СЂ',
-                        items: filters.map(function(f) { return { title: f.title, value: f.url }; }),
-                        onSelect: function(item) { fetchCallback(item.value); }
-                    });
+                    openSystemFilterPanel();
                 };
 
                 Lampa.Activity.push({
@@ -139,16 +326,7 @@
                     });
                 };
 
-                if (filters.length > 0) {
-                    Lampa.Select.show({
-                        title: 'Р’С‹Р±РѕСЂ РІР°СЂРёР°РЅС‚Р°',
-                        items: filters.map(function(f) { return { title: f.title, value: f.url }; }),
-                        onSelect: function(item) { fetchCallback(item.value); },
-                        onBack: function() { showList(); }
-                    });
-                } else {
-                    showList();
-                }
+                showList();
             }
         }
 
@@ -161,7 +339,7 @@
                 btn.on('hover:enter', function () { 
                     loadFilmix(movie); 
                 });
-                
+
                 if(target.hasClass('full-start__buttons')) target.append(btn);
                 else target.after(btn);
 
