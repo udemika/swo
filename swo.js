@@ -1,16 +1,12 @@
-
-swo_fixed.js
 (function () {
     'use strict';
 
     /**
      * Filmix Nexus (Legacy Support) v2.3.6
-     * - ИСПРАВЛЕНО: Ошибка сети 503 через автоматическую ротацию прокси
-     * - ИСПРАВЛЕНО: Сохранение последнего рабочего прокси в Lampa.Storage
-     * - ОБНОВЛЕНО: Новый список прокси (swo.js)
-     * - ИЗМЕНЕНО: Название кнопки "Filmix UHD" с иконкой плея
+     * - РРЎРџР РђР’Р›Р•РќРћ: РћС€РёР±РєР° СЃРµС‚Рё 503 С‡РµСЂРµР· Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєСѓСЋ СЂРѕС‚Р°С†РёСЋ РїСЂРѕРєСЃРё
+     * - РРЎРџР РђР’Р›Р•РќРћ: РЎРѕС…СЂР°РЅРµРЅРёРµ РїРѕСЃР»РµРґРЅРµРіРѕ СЂР°Р±РѕС‡РµРіРѕ РїСЂРѕРєСЃРё РІ Lampa.Storage
+     * - РћР‘РќРћР’Р›Р•РќРћ: РќРѕРІС‹Р№ СЃРїРёСЃРѕРє РїСЂРѕРєСЃРё (swo.js)
      */
-
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
         window.filmix_nexus_loaded = true;
@@ -18,6 +14,7 @@ swo_fixed.js
         var WORKING_UID = 'i8nqb9vw';
         var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
         var BASE_DOMAIN = 'http://showypro.com';
+        
         var PROXIES = [
             'https://cors.byskaz.ru/',
             'http://85.198.110.239:8975/',
@@ -27,6 +24,7 @@ swo_fixed.js
             'https://cors557.deno.dev/'
         ];
 
+        // Р—Р°РіСЂСѓР¶Р°РµРј СЃРѕС…СЂР°РЅРµРЅРЅС‹Р№ РёРЅРґРµРєСЃ РїСЂРѕРєСЃРё РёР»Рё РЅР°С‡РёРЅР°РµРј СЃ 0
         var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0'));
         if (isNaN(currentProxyIdx) || currentProxyIdx >= PROXIES.length) currentProxyIdx = 0;
 
@@ -55,132 +53,139 @@ swo_fixed.js
             var fetchWithRetry = function(targetUrl) {
                 var proxy = PROXIES[currentProxyIdx];
                 toggleLoading(true);
+
                 network.native(proxy + sign(targetUrl), function (res) {
                     toggleLoading(false);
+                    // Р—Р°РїРѕРјРёРЅР°РµРј СЂР°Р±РѕС‡РёР№ РїСЂРѕРєСЃРё РґР»СЏ С‚РµРєСѓС‰РµР№ СЃРµСЃСЃРёРё
                     Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx.toString());
                     displayFilmix(res, movie, fetchWithRetry);
                 }, function (err) {
                     attempts++;
                     console.log('Filmix: Proxy ' + proxy + ' failed. Switching...');
+                    
                     if (attempts < PROXIES.length) {
+                        // Р РѕС‚Р°С†РёСЏ РїСЂРѕРєСЃРё: Р±РµСЂРµРј СЃР»РµРґСѓСЋС‰РёР№ РёР· СЃРїРёСЃРєР°
                         currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
                         fetchWithRetry(targetUrl);
                     } else {
                         toggleLoading(false);
-                        Lampa.Noty.show('Filmix: Ошибка сети (все прокси недоступны)');
+                        Lampa.Noty.show('Filmix: РћС€РёР±РєР° СЃРµС‚Рё (РІСЃРµ РїСЂРѕРєСЃРё РЅРµРґРѕСЃС‚СѓРїРЅС‹)');
                     }
                 }, false, { dataType: 'text' });
             };
+
             fetchWithRetry(url);
         }
 
         function displayFilmix(res, movie, fetchCallback) {
-            var $dom = $('<div class="watching__body" style="z-index: 1;"></div>');
-            var seasons = [];
+            var $dom = $('<div>' + res + '</div>');
+            var items = [], filters = [];
 
-            try {
-                res = JSON.parse(res);
-                if (res.seasons) seasons = res.seasons;
-            } catch (e) {
-                console.log('Error parsing response', e);
-            }
-
-            if (!seasons.length) {
-                Lampa.Noty.show('Filmix: Данные не найдены');
-                return;
-            }
-
-            var allEpisodes = [];
-            var $playlist = $('<ul class="selector watching__select" style="margin-bottom: 10px;"></ul>');
-
-            seasons.forEach(function (season, idx) {
-                var $seasonBtn = $('<li class="selector__item" data-season="' + idx + '" style="padding: 8px 12px; margin-right: 5px; background: #1e9b97; border-radius: 4px; cursor: pointer; font-weight: bold;">' + (season.name || 'Сезон ' + (idx + 1)) + '</li>');
-                $playlist.append($seasonBtn);
-
-                var seasonEpisodes = [];
-                if (season.series) {
-                    season.series.forEach(function (ep, epIdx) {
-                        seasonEpisodes.push({
-                            title: (ep.name || 'Эпизод ' + (epIdx + 1)) + ' - ' + season.name,
-                            url: ep.link
-                        });
-                    });
-                }
-                allEpisodes.push(seasonEpisodes);
+            $dom.find('.videos__button, .selector[data-json*="link"]').each(function() {
+                try {
+                    var json = JSON.parse($(this).attr('data-json'));
+                    filters.push({ title: $(this).text().trim(), url: json.url });
+                } catch(e) {}
             });
 
-            $dom.append($playlist);
-
-            function updateEpisodes(seasonIdx) {
-                var $episodes = $dom.find('.episodes-list');
-                if ($episodes.length) $episodes.remove();
-
-                var $epList = $('<ul class="selector watching__select" style="max-height: 300px; overflow-y: auto;"></ul>');
-                allEpisodes[seasonIdx].forEach(function (ep, idx) {
-                    var $epBtn = $('<li class="selector__item" data-episode="' + idx + '" style="padding: 8px 12px; margin-right: 5px; background: rgba(255,255,255,0.1); border-radius: 4px; cursor: pointer;">' + ep.title + '</li>');
-                    $epBtn.on('click', function () {
-                        Lampa.Activity.push({
-                            url: 'overlay',
-                            component: {
-                                name: 'player',
-                                data: {
-                                    url: ep.url,
-                                    title: ep.title,
-                                    subtitle: 'Filmix UHD'
-                                }
-                            }
-                        });
+            $dom.find('.videos__item, .selector[data-json*="play"]').each(function() {
+                try {
+                    var json = JSON.parse($(this).attr('data-json'));
+                    items.push({
+                        title: $(this).find('.videos__item-title').text().trim() || json.title || 'Р’РёРґРµРѕ',
+                        quality: json.maxquality || 'HD',
+                        url: sign(json.url)
                     });
-                    $epList.append($epBtn);
+                } catch(e) {}
+            });
+
+            if (typeof Lampa.Interaction !== 'undefined') {
+                var interaction = new Lampa.Interaction({
+                    card: movie,
+                    filter: filters.length > 0
                 });
 
-                $epList.addClass('episodes-list');
-                $dom.append($epList);
-            }
+                interaction.onPlay = function(item) {
+                    Lampa.Player.play({ url: item.url, title: item.title, movie: movie });
+                };
 
-            $playlist.on('click', '.selector__item', function () {
-                var seasonIdx = $(this).data('season');
-                updateEpisodes(seasonIdx);
-            });
+                interaction.onFilter = function() {
+                    Lampa.Select.show({
+                        title: 'Р¤РёР»СЊС‚СЂ',
+                        items: filters.map(function(f) { return { title: f.title, value: f.url }; }),
+                        onSelect: function(item) { fetchCallback(item.value); }
+                    });
+                };
 
-            if (allEpisodes.length > 0) {
-                updateEpisodes(0);
-            }
+                Lampa.Activity.push({
+                    component: 'interaction',
+                    title: 'Filmix',
+                    object: interaction,
+                    onBack: function() { Lampa.Activity.backward(); }
+                });
 
-            Lampa.Activity.push({
-                url: 'overlay',
-                component: {
-                    name: 'visible',
-                    data: {
-                        html: $dom
-                    }
+                interaction.content(items);
+            } else {
+                var showList = function() {
+                    Lampa.Select.show({
+                        title: movie.title || movie.name || 'Filmix',
+                        items: items.map(function(i) { return { title: i.title + ' ['+i.quality+']', value: i }; }),
+                        onSelect: function(item) {
+                            Lampa.Player.play({ url: item.value.url, title: item.value.title, movie: movie });
+                        },
+                        onBack: function() {
+                            Lampa.Controller.toggle('full_start');
+                        }
+                    });
+                };
+
+                if (filters.length > 0) {
+                    Lampa.Select.show({
+                        title: 'Р’С‹Р±РѕСЂ РІР°СЂРёР°РЅС‚Р°',
+                        items: filters.map(function(f) { return { title: f.title, value: f.url }; }),
+                        onSelect: function(item) { fetchCallback(item.value); },
+                        onBack: function() { showList(); }
+                    });
+                } else {
+                    showList();
                 }
-            });
+            }
         }
 
-        // Регистрируем плагин в Lampa
-        Lampa.Plugins.register('Filmix_Nexus', function (p) {
-            p.render = function (item) {
-                var buttons = [];
-                buttons.push({
-                    title: 'Filmix UHD',
-                    icon: '⏵',
-                    onSelect: function () {
-                        loadFilmix(item);
-                    }
+        // --- РћР‘РќРћР’Р›Р•РќРќРђРЇ Р›РћР“РРљРђ Р”РћР‘РђР’Р›Р•РќРРЇ РљРќРћРџРљР ---
+        function addButton(render, movie) {
+            if (render.find('.fx-nexus-native').length) return;
+            var target = render.find('.view--torrent, .view--online, .button--play, .full-start__buttons').last();
+            if (target.length) {
+                var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Filmix</span></div>');
+                btn.on('hover:enter', function () { 
+                    loadFilmix(movie); 
                 });
-                return buttons;
-            };
+                
+                if(target.hasClass('full-start__buttons')) target.append(btn);
+                else target.after(btn);
+
+                if (Lampa.Controller.toggle) Lampa.Controller.toggle(Lampa.Controller.enabled().name);
+            }
+        }
+
+        Lampa.Listener.follow('full', function (e) {
+            if (e.type == 'complete' || e.type == 'complite') {
+                addButton(e.object.activity.render(), e.data.movie);
+            }
         });
 
-        startPlugin();
+        Lampa.Listener.follow('app', function (e) {
+            if (e.type == 'ready') {
+                var active = Lampa.Activity.active();
+                if (active && (active.component == 'full_start' || active.component == 'select')) {
+                    var card = active.card || (active.object && active.object.movie);
+                    if (card) addButton(active.activity.render(), card);
+                }
+            }
+        });
+        // --------------------------------------------
     }
 
-    // Инициализация
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', startPlugin);
-    } else {
-        startPlugin();
-    }
-
+    if (typeof Lampa !== 'undefined') startPlugin();
 })();
