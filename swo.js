@@ -3,9 +3,10 @@
     'use strict';
 
     /**
-     * Filmix Nexus (Legacy Support) v2.3.5
+     * Filmix Nexus (Legacy Support) v2.3.6
      * - ИСПРАВЛЕНО: Ошибка сети 503 через автоматическую ротацию прокси
      * - ИСПРАВЛЕНО: Сохранение последнего рабочего прокси в Lampa.Storage
+     * - ОБНОВЛЕНО: Новый список прокси (swo.js)
      */
     function startPlugin() {
         if (window.filmix_nexus_loaded) return;
@@ -17,12 +18,16 @@
         
         var PROXIES = [
             'https://cors.byskaz.ru/',
-            'https://cors.lampa.stream/',
-            'https://corsproxy.io/?'
+            'http://85.198.110.239:8975/',
+            'http://91.184.245.56:8975/',
+            'https://apn10.akter-black.com/',
+            'https://apn5.akter-black.com/',
+            'https://cors557.deno.dev/'
         ];
 
         // Загружаем сохраненный индекс прокси или начинаем с 0
         var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0'));
+        if (isNaN(currentProxyIdx) || currentProxyIdx >= PROXIES.length) currentProxyIdx = 0;
 
         function sign(url) {
             url = url + '';
