@@ -1,152 +1,130 @@
 (function () {
     'use strict';
 
-    function startPlugin() {
-        if (window.filmix_nexus_loaded) return;
-        window.filmix_nexus_loaded = true;
+    function StartSwo() {
+        var network = new Lampa.Reguest();
+        var base_proxy = 'https://cors.byskaz.ru/';
+        var base_url = 'http://showypro.com/lite/fxapi';
+        var showy_token = 'f8377057-90eb-4d76-93c9-7605952a096l';
+        var uid = 'i8nqb9vw';
 
-        var WORKING_UID = 'i8nqb9vw';
-        var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
-        var BASE_DOMAIN = 'http://showypro.com';
-        
-        var PROXIES = [
-            'https://cors.byskaz.ru/',
-            'http://85.198.110.239:8975/',
-            'http://91.184.245.56:8975/',
-            'https://apn10.akter-black.com/',
-            'https://apn5.akter-black.com/',
-            'https://cors557.deno.dev/'
-        ];
+        // Парсер HTML в массив объектов для Lampa.Select
+        this.parseResponse = function(html) {
+            var items = [];
+            // Регулярка ищет блоки selector и забирает содержимое data-json
+            var regex = /<div[^>]*class="[^"]*selector[^"]*"[^>]*data-json='([^']*)'[^>]*>([\s\S]*?)<\/div>/g;
+            var match;
 
-        var currentProxyIdx = parseInt(Lampa.Storage.get('fx_nexus_proxy_idx', '0')) || 0;
+            while ((match = regex.exec(html)) !== null) {
+                try {
+                    var data = JSON.parse(match[1]);
+                    // Извлекаем название из HTML-структуры внутри дива
+                    var titleMatch = match[2].match(/class="videos__item-title[^>]*">([^<]+)<\/div>/);
+                    var name = titleMatch ? titleMatch[1].trim() : 'Опция';
 
-        function sign(url) {
-            if (!url) return '';
-            if (url.indexOf('http') !== 0) url = BASE_DOMAIN + (url.indexOf('/') === 0 ? '' : '/') + url;
-            if (url.indexOf('uid=') == -1) url = Lampa.Utils.addUrlComponent(url, 'uid=' + WORKING_UID);
-            if (url.indexOf('showy_token=') == -1) url = Lampa.Utils.addUrlComponent(url, 'showy_token=' + WORKING_TOKEN);
-            if (url.indexOf('rjson=') == -1) url = Lampa.Utils.addUrlComponent(url, 'rjson=False');
-            return url;
-        }
+                    items.push({
+                        title: name,
+                        method: data.method,
+                        url: data.url,
+                        // Сохраняем оригинальные данные для плеера
+                        quality: data.quality || {}
+                    });
+                } catch (e) { }
+            }
+            return items;
+        };
 
-        // Вызов компонента как в on.js
-        function openFilmix(movie, targetUrl) {
-            var url = targetUrl || (BASE_DOMAIN + '/lite/fxapi?' + (movie.kinopoisk_id ? 'kinopoisk_id=' + movie.kinopoisk_id : 'postid=' + movie.id));
-            
-            Lampa.Activity.push({
-                title: 'Filmix',
-                component: 'interaction',
-                object: {
-                    movie: movie,
-                    url: url,
-                    create: function() {
-                        this.load();
-                    },
-                    load: function() {
-                        var _this = this;
-                        var network = new Lampa.Reguest();
-                        var proxy = PROXIES[currentProxyIdx];
-                        
-                        _this.activity.loader(true);
+        // Главная функция вызова
+        this.start = function(params) {
+            var url = base_url + '?rjson=False&kinopoisk_id=' + params.movie.kinopoisk_id + '&uid=' + uid + '&showy_token=' + showy_token;
+            this.load(url, params.movie.title);
+        };
 
-                        network.native(proxy + sign(_this.url), function (res) {
-                            _this.activity.loader(false);
-                            var items = [];
-                            var $dom = $('<div>' + res + '</div>');
+        // Загрузка данных (рекурсивная для сезонов и серий)
+        this.load = function(url, title) {
+            var _this = this;
+            // Всегда оборачиваем в прокси
+            var full_url = base_proxy + url.replace(/https?:\/\//, '');
 
-                            $dom.find('.selector, .videos__item, .videos__button').each(function() {
-                                var el = $(this);
-                                var jsonStr = el.attr('data-json');
-                                if(!jsonStr) return;
+            Lampa.Select.show({
+                title: 'Загрузка...',
+                items: [{ title: 'Подождите...' }]
+            });
 
-                                try {
-                                    var json = JSON.parse(jsonStr);
-                                    var link = json.url || json.play;
-                                    // Если в ссылке нет .m3u8 или .mp4 - это папка
-                                    var isFolder = !!json.url && !(link.indexOf('.m3u8') > -1 || link.indexOf('.mp4') > -1);
+            network.silent(full_url, function(str) {
+                var items = _this.parseResponse(str);
 
-                                    items.push({
-                                        title: el.text().trim() || json.title || 'Видео',
-                                        subtitle: json.quality || json.maxquality || '',
-                                        url: link,
-                                        is_folder: isFolder,
-                                        template: 'selectbox_item'
-                                    });
-                                } catch(e) {}
-                            });
+                if (items.length > 0) {
+                    _this.display(items, title);
+                } else {
+                    Lampa.Noty.show('Данные не найдены или ошибка сервера');
+                }
+            }, function() {
+                Lampa.Noty.show('Ошибка сети через прокси');
+            });
+        };
 
-                            if (items.length > 0) {
-                                _this.activity.content(items);
-                            } else {
-                                Lampa.Noty.show('Контент не найден');
-                                _this.activity.back();
-                            }
-                        }, function () {
-                            currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
-                            Lampa.Storage.set('fx_nexus_proxy_idx', currentProxyIdx.toString());
-                            _this.load();
-                        }, false, { dataType: 'text' });
-                    },
-                    onItem: function(item) {
-                        if (item.is_folder) {
-                            // Для сезонов и озвучки подменяем URL и вызываем load() внутри того же окна
-                            this.url = item.url;
-                            this.load();
-                        } else {
-                            Lampa.Player.play({
-                                url: sign(item.url),
-                                title: item.title,
-                                movie: this.movie
-                            });
-                        }
-                    },
-                    onBack: function() {
-                        Lampa.Activity.backward();
+        // Отрисовка системного окна
+        this.display = function(items, title) {
+            var _this = this;
+
+            Lampa.Select.show({
+                title: title,
+                items: items,
+                onSelect: function(item) {
+                    if (item.method === 'link') {
+                        // Если это ссылка на сезон или озвучку — идем вглубь
+                        _this.load(item.url, item.title);
+                    } else if (item.method === 'play') {
+                        // Если это финальная ссылка на видео
+                        _this.play(item);
                     }
+                },
+                onBack: function() {
+                    Lampa.Controller.toggle('full');
                 }
             });
-        }
+        };
 
-        // Добавление кнопки в шторку (как в on.js)
-        function addButton(render, movie) {
-            if (render.find('.fx-nexus-native').length) return;
+        // Запуск плеера
+        this.play = function(item) {
+            var video = {
+                url: item.url,
+                title: item.title
+            };
+            Lampa.Player.play(video);
+            Lampa.Player.playlist([video]);
+        };
+    }
 
-            var target = render.find('.view--torrent, .button--play, .full-start__button').last();
-            if (target.length) {
-                var btn = $('<div class="full-start__button selector view--online fx-nexus-native"><span>Filmix</span></div>');
-                btn.on('hover:enter', function () {
-                    openFilmix(movie);
-                });
-                target.after(btn);
-                // Принудительная перерисовка контроллера для навигации пультом
-                Lampa.Controller.add('full_start', {
-                    toggle: function () {},
-                    up: function () {},
-                    down: function () {},
-                    right: function () {},
-                    left: function () {},
-                    gone: function () {},
-                    enter: function () {}
-                });
-                Lampa.Controller.toggle('full_start');
-            }
-        }
-
+    // Регистрация плагина и создание кнопки
+    function init() {
         Lampa.Listener.follow('full', function (e) {
-            if (e.type == 'complete' || e.type == 'complite') {
-                addButton(e.object.activity.render(), e.data.movie);
-            }
-        });
+            if (e.type == 'complite') {
+                var btn = $('<div class="full-start__button selector"><span>Смотреть (Swo)</span></div>');
+                
+                btn.on('hover:enter', function () {
+                    var swo = new StartSwo();
+                    swo.start(e.data);
+                });
 
-        Lampa.Listener.follow('app', function (e) {
-            if (e.type == 'ready') {
-                var active = Lampa.Activity.active();
-                if (active && (active.component == 'full_start' || active.component == 'select')) {
-                    addButton(active.activity.render(), active.card || (active.object && active.object.movie));
-                }
+                // Добавляем кнопку в стандартную панель кнопок карточки
+                $('.full-start__buttons', e.object.render()).append(btn);
+                
+                // Пересчитываем навигацию, чтобы кнопка стала доступна для пульта
+                Lampa.Controller.add('full', {
+                    toggle: function () {
+                        Lampa.Controller.collectionSet(e.object.render());
+                        Lampa.Controller.render().find('.selector').first().focus();
+                    }
+                });
             }
         });
     }
 
-    if (typeof Lampa !== 'undefined') startPlugin();
+    if (window.appready) init();
+    else Lampa.Listener.follow('app', function (e) {
+        if (e.type == 'ready') init();
+    });
+
 })();
