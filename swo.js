@@ -3,8 +3,9 @@
 
     /**
      * Filmix UHD (showypro.com)
-     * UI как на твоём скрине: список серий в окне Interaction (справа),
-     * а выбор сезона/перевода открывается системным окном Lampa.Select (НЕ Lampa.Filter).
+     * Требование по UI: как на скрине — список серий в Interaction (без открытия боковой панели фильтра),
+     * а при нажатии на кнопку «Фильтр» открывать системный Lampa.Select (сезон/перевод) и делать перезапрос по method:"link".
+     * Формат showypro (из твоих примеров): сезоны/переводы = method:"link", серии = method:"play" + quality{...}. 
      */
 
     function startPlugin() {
@@ -52,7 +53,7 @@
             var voices = [];
             var items = [];
 
-            // seasons (method:link)
+            // Сезоны (method:link)
             $dom.find('.videos__item.videos__season[data-json]').each(function () {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
@@ -65,7 +66,7 @@
                 } catch (e) { }
             });
 
-            // voices (method:link)
+            // Переводы (method:link)
             $dom.find('.videos__button[data-json]').each(function () {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
@@ -78,7 +79,7 @@
                 } catch (e) { }
             });
 
-            // episodes (method:play)
+            // Серии (method:play)
             $dom.find('.videos__item.videos__movie[data-json], .videos__item[data-json]').each(function () {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
@@ -93,9 +94,17 @@
                     var title = ($(this).find('.videos__item-title').text().trim() || json.title || 'Видео');
                     title = title.replace(/\s+/g, ' ').trim();
 
+                    var qkeys = json.quality ? Object.keys(json.quality) : [];
+                    var best = qkeys.length ? qkeys.sort(function (a, b) {
+                        var na = parseInt(a, 10) || 0;
+                        var nb = parseInt(b, 10) || 0;
+                        return nb - na;
+                    })[0] : '';
+
                     items.push({
                         title: title,
                         url: sign(json.url),
+                        quality: best || 'HD',
                         qualityMap: json.quality || null,
                         season: season,
                         episode: episode
@@ -117,11 +126,39 @@
             return url;
         }
 
+        function playItem(movie, item, items) {
+            var playlist = [];
+
+            items.forEach(function (it) {
+                playlist.push({
+                    title: it.title,
+                    url: pickQualityUrl(it),
+                    movie: movie,
+                    isonline: true,
+                    season: it.season,
+                    episode: it.episode,
+                    quality: it.quality
+                });
+            });
+
+            Lampa.Player.play({
+                title: item.title,
+                url: pickQualityUrl(item),
+                movie: movie,
+                isonline: true,
+                season: item.season,
+                episode: item.episode,
+                quality: item.quality,
+                playlist: playlist
+            });
+        }
+
         function loadFilmix(movie) {
             var network = new (Lampa.Request || Lampa.Reguest)();
 
             var kp = movie.kinopoisk_id || movie.kinopoiskid || movie.kinopoisk || movie.kp_id || movie.kp;
             var id = kp || movie.id;
+
             var url = BASE_DOMAIN + '/lite/fxapi?kinopoisk_id=' + encodeURIComponent(id);
 
             var attempts = 0;
@@ -161,13 +198,13 @@
             var savedVoiceIdx = parseInt(Lampa.Storage.get('fx_uhd_voice_idx', '0'));
             if (isNaN(savedVoiceIdx) || savedVoiceIdx < 0) savedVoiceIdx = 0;
 
-            var lastFilter = Lampa.Storage.get('fx_uhd_last_filter', 'season'); // season|voice
+            var lastFilter = Lampa.Storage.get('fx_uhd_last_filter', 'season');
             if (lastFilter !== 'season' && lastFilter !== 'voice') lastFilter = 'season';
 
             if (savedSeasonIdx >= seasons.length) savedSeasonIdx = 0;
             if (savedVoiceIdx >= voices.length) savedVoiceIdx = 0;
 
-            // Если пришёл только список сезонов — сразу идём в сохранённый сезон
+            // Если ответ только с сезонами — автоматом грузим выбранный сезон
             if (!items.length && seasons.length && !voices.length) {
                 Lampa.Storage.set('fx_uhd_season_idx', String(savedSeasonIdx));
                 Lampa.Storage.set('fx_uhd_last_filter', 'season');
@@ -180,9 +217,7 @@
 
             function closeSelectAndReload(url) {
                 setTimeout(function () { try { Lampa.Select.close(); } catch (e) { } }, 10);
-                try {
-                    if (enabled_controller) Lampa.Controller.toggle(enabled_controller);
-                } catch (e) { }
+                try { if (enabled_controller) Lampa.Controller.toggle(enabled_controller); } catch (e) { }
                 fetchCallback(url);
             }
 
@@ -214,9 +249,7 @@
                         title: 'Фильтр',
                         items: list,
                         onBack: function () {
-                            try {
-                                if (enabled_controller) Lampa.Controller.toggle(enabled_controller);
-                            } catch (e) { }
+                            try { if (enabled_controller) Lampa.Controller.toggle(enabled_controller); } catch (e) { }
                         },
                         onSelect: function (a) {
                             if (a.reset) {
@@ -280,38 +313,13 @@
                     });
                 }
 
-                // Как ты просил ранее — открывать сразу последний раздел
+                // Сразу открывать последний раздел (как ты просил ранее)
                 if (lastFilter === 'voice' && voices.length) openVoices();
                 else if (lastFilter === 'season' && seasons.length) openSeasons();
                 else openRoot();
             }
 
-            function playItem(item) {
-                var playlist = [];
-                items.forEach(function (it) {
-                    playlist.push({
-                        title: it.title,
-                        url: pickQualityUrl(it),
-                        movie: movie,
-                        isonline: true,
-                        season: it.season,
-                        episode: it.episode
-                    });
-                });
-
-                Lampa.Player.play({
-                    title: item.title,
-                    url: pickQualityUrl(item),
-                    movie: movie,
-                    isonline: true,
-                    season: item.season,
-                    episode: item.episode,
-                    playlist: playlist
-                });
-            }
-
-            // Главное: показываем список серий через Interaction (как на скрине),
-            // а фильтр — через системный Select.
+            // Главное окно (как на твоём скрине): Interaction со списком серий
             if (typeof Lampa.Interaction !== 'undefined') {
                 var interaction = new Lampa.Interaction({
                     card: movie,
@@ -319,9 +327,10 @@
                 });
 
                 interaction.onPlay = function (item) {
-                    playItem(item);
+                    playItem(movie, item, items);
                 };
 
+                // ВАЖНО: не используем Lampa.Filter, только системный Select
                 interaction.onFilter = function () {
                     openSystemFilterSelect();
                 };
@@ -333,12 +342,12 @@
                     onBack: function () { Lampa.Activity.backward(); }
                 });
 
-                // Чтобы в строке сверху (рядом с «Фильтр») было понятно что выбрано
+                // Пояснение выбора рядом с «Фильтр» (как на скрине)
                 try {
                     var label = [];
                     if (seasons.length && seasons[savedSeasonIdx]) label.push(seasons[savedSeasonIdx].title);
                     if (voices.length && voices[savedVoiceIdx]) label.push(voices[savedVoiceIdx].title);
-                    if (label.length) interaction.head(label.join(' • '));
+                    if (label.length && interaction.head) interaction.head(label.join(' • '));
                 } catch (e) { }
 
                 interaction.content(items);
@@ -347,7 +356,7 @@
                 Lampa.Select.show({
                     title: (movie.title || movie.name || 'Filmix UHD'),
                     items: items.map(function (i) { return { title: i.title, value: i }; }),
-                    onSelect: function (a) { playItem(a.value); }
+                    onSelect: function (a) { playItem(movie, a.value, items); }
                 });
             }
         }
