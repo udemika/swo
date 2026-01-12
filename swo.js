@@ -40,7 +40,6 @@
             var current_kinopoisk_id = null;
             var current_season = null;
             var current_voice = null;
-            var all_data = {}; // Храним все данные здесь
             
             var filter_translate = {
                 season: 'Сезон',
@@ -102,15 +101,14 @@
                     if (type == 'filter') {
                         if (a.stype == 'season') {
                             current_season = filter_find.season[b.index].season;
-                            current_voice = 0; // Сбрасываем озвучку при смене сезона
+                            current_voice = 0; // Сбрасываем на первую озвучку
                             filter_find.voice = [];
-                            all_data = {};
                             _this.loadSeason(current_season);
                         } else if (a.stype == 'voice') {
                             current_voice = b.index;
-                            console.log('[ShowyPro] Voice selected:', current_voice);
-                            // Показываем эпизоды из выбранной озвучки
-                            _this.showVoiceEpisodes(current_voice);
+                            console.log('[ShowyPro] Voice selected:', current_voice, 'index:', b.index);
+                            // Делаем новый запрос с выбранной озвучкой
+                            _this.loadVoice(b.index);
                         }
                         
                         setTimeout(Lampa.Select.close, 10);
@@ -203,105 +201,90 @@
                 });
             };
 
-            this.showVoiceEpisodes = function(voiceIdx) {
-                console.log('[ShowyPro] Showing episodes for voice:', voiceIdx);
+            this.loadVoice = function(voiceIdx) {
+                var _this = this;
+                scroll.clear();
+                scroll.body().append(Lampa.Template.get('lampac_content_loading'));
                 
-                if (all_data.voices && all_data.voices[voiceIdx]) {
-                    var episodes = all_data.voices[voiceIdx].episodes;
-                    console.log('[ShowyPro] Episodes for voice', voiceIdx, ':', episodes.length);
-                    
-                    if (episodes.length > 0) {
-                        this.displayEpisodes(episodes);
-                        this.updateFilterMenu();
-                    } else {
-                        this.empty('Нет серий для этой озвучки');
-                    }
-                } else {
-                    console.log('[ShowyPro] No data for voice:', voiceIdx);
-                }
+                // ВАЖНО: параметр p начинается с 1, а не с 0
+                var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
+                if (current_season) url += '&s=' + current_season;
+                url += '&p=' + (voiceIdx + 1);  // +1 потому что индекс с 0, а параметр с 1
+                url = sign(url);
+                
+                console.log('[ShowyPro] Loading voice index:', voiceIdx, 'param p:', (voiceIdx + 1));
+                console.log('[ShowyPro] Request URL:', url);
+                
+                this.requestWithProxy(url, function(html) {
+                    _this.parseContent(html, true); // true = не обновлять список озвучек
+                }, function() {
+                    _this.empty('Ошибка загрузки озвучки');
+                });
             };
 
             // ИСПРАВЛЕННЫЙ ПАРСИНГ КОНТЕНТА
-            this.parseContent = function(html) {
+            this.parseContent = function(html, keepVoices) {
                 var _this = this;
                 console.log('[ShowyPro] parseContent - parsing episodes and voices');
                 
                 try {
                     var $dom = $('<div>' + html + '</div>');
                     
-                    // Сбрасываем данные
-                    all_data = { voices: [] };
-                    
-                    // Парсим озвучки (кнопки переключения)
-                    var $voiceButtons = $dom.find('.videos__button');
-                    console.log('[ShowyPro] Voice buttons found:', $voiceButtons.length);
-                    
-                    // Парсим блоки с эпизодами для каждой озвучки
-                    var $voiceBlocks = $dom.find('.videos__items');
-                    console.log('[ShowyPro] Voice blocks found:', $voiceBlocks.length);
-                    
-                    // Если блоков столько же сколько кнопок - каждый блок это озвучка
-                    $voiceBlocks.each(function(voiceIndex) {
-                        var $block = $(this);
-                        var voiceName = 'Озвучка ' + (voiceIndex + 1);
+                    // Парсим озвучки только если это первая загрузка
+                    if (!keepVoices) {
+                        var $voices = $dom.find('.videos__button');
+                        var voices = [];
                         
-                        // Пытаемся получить название озвучки из кнопки
-                        if ($voiceButtons.eq(voiceIndex).length) {
-                            voiceName = $voiceButtons.eq(voiceIndex).text().trim() || voiceName;
-                        }
-                        
-                        var episodes = [];
-                        
-                        // Парсим эпизоды в этом блоке
-                        $block.find('.videos__item').each(function() {
-                            try {
-                                var $item = $(this);
-                                var dataJson = $item.attr('data-json');
-                                
-                                if (!dataJson) return;
-                                
-                                var jsonData = JSON.parse(dataJson);
-                                var title = $item.find('.videos__item-title').text().trim();
-                                var season = parseInt($item.attr('s')) || current_season || 0;
-                                var episode = parseInt($item.attr('e')) || 0;
-                                
-                                if (jsonData.url) {
-                                    episodes.push({
-                                        title: title || ('Эпизод ' + episode),
-                                        url: jsonData.url,
-                                        quality: jsonData.quality || {},
-                                        season: season,
-                                        episode: episode
-                                    });
-                                }
-                            } catch(e) {
-                                console.log('[ShowyPro] Episode parse error:', e);
+                        $voices.each(function() {
+                            var title = $(this).text().trim();
+                            if (title) {
+                                voices.push({ title: title });
                             }
                         });
+
+                        console.log('[ShowyPro] Voices found:', voices.length);
                         
-                        if (episodes.length > 0) {
-                            all_data.voices.push({
-                                title: voiceName,
-                                episodes: episodes
-                            });
+                        if (voices.length > 0) {
+                            filter_find.voice = voices;
+                            if (current_voice === null) current_voice = 0;
+                        }
+                    }
+                    
+                    // Парсим эпизоды
+                    var $episodes = $dom.find('.videos__item');
+                    var episodes = [];
+                    
+                    $episodes.each(function() {
+                        try {
+                            var $item = $(this);
+                            var dataJson = $item.attr('data-json');
+                            
+                            if (!dataJson) return;
+                            
+                            var jsonData = JSON.parse(dataJson);
+                            var title = $item.find('.videos__item-title').text().trim();
+                            var season = parseInt($item.attr('s')) || current_season || 0;
+                            var episode = parseInt($item.attr('e')) || 0;
+                            
+                            if (jsonData.url) {
+                                episodes.push({
+                                    title: title || ('Эпизод ' + episode),
+                                    url: jsonData.url,
+                                    quality: jsonData.quality || {},
+                                    season: season,
+                                    episode: episode
+                                });
+                            }
+                        } catch(e) {
+                            console.log('[ShowyPro] Episode parse error:', e);
                         }
                     });
 
-                    console.log('[ShowyPro] Total voices with episodes:', all_data.voices.length);
+                    console.log('[ShowyPro] Episodes found:', episodes.length);
 
-                    // Обновляем список озвучек в фильтре
-                    if (all_data.voices.length > 0) {
-                        filter_find.voice = all_data.voices.map(function(v) {
-                            return { title: v.title };
-                        });
-                        
-                        // Устанавливаем текущую озвучку
-                        if (current_voice === null || current_voice >= all_data.voices.length) {
-                            current_voice = 0;
-                        }
-                        
+                    if (episodes.length > 0) {
                         _this.updateFilterMenu();
-                        _this.showVoiceEpisodes(current_voice);
+                        _this.displayEpisodes(episodes);
                     } else {
                         _this.empty('Серии не найдены');
                     }
@@ -524,7 +507,7 @@
             }
         });
 
-        console.log('[ShowyPro] Plugin v7.0 loaded - Fixed voice switching');
+        console.log('[ShowyPro] Plugin v8.0 loaded - Voice selection fixed');
     }
 
     if (window.appready) startPlugin();
