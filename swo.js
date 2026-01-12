@@ -7,21 +7,21 @@
 
         var WORKING_UID = 'i8nqb9vw';
         var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
-        var BASE_DOMAIN = 'http://showypro.com';
+        var BASE_DOMAIN = 'showypro.com'; // БЕЗ http://
+        
+        // НОВЫЕ ПРОКСИ (проверенные)
         var PROXIES = [
+            'https://corsproxy.io/?',
+            'https://api.allorigins.win/raw?url=',
+            'https://cors-anywhere.herokuapp.com/',
             'https://cors.byskaz.ru/',
-            'http://85.198.110.239:8975/',
-            'http://91.184.245.56:8975/',
-            'https://apn10.akter-black.com/',
-            'https://apn5.akter-black.com/',
-            'https://cors557.deno.dev/'
+            'https://corsproxy.org/?'
         ];
 
         var currentProxyIdx = parseInt(Lampa.Storage.get('showypro_proxy_idx', '0'));
         if (isNaN(currentProxyIdx) || currentProxyIdx >= PROXIES.length) currentProxyIdx = 0;
 
         function sign(url) {
-            url = url + '';
             if (url.indexOf('uid=') == -1) url = Lampa.Utils.addUrlComponent(url, 'uid=' + WORKING_UID);
             if (url.indexOf('showy_token=') == -1) url = Lampa.Utils.addUrlComponent(url, 'showy_token=' + WORKING_TOKEN);
             if (url.indexOf('rjson=') == -1) url = Lampa.Utils.addUrlComponent(url, 'rjson=False');
@@ -53,13 +53,14 @@
             this.requestWithProxy = function(url, onSuccess, onError) {
                 var _this = this;
                 var proxy = PROXIES[currentProxyIdx];
-                var fullUrl = proxy + sign(url);
+                
+                // ПРАВИЛЬНЫЙ ФОРМАТ: proxy + encodeURIComponent(http://url)
+                var fullUrl = proxy + encodeURIComponent('http://' + sign(url));
                 
                 console.log('ShowyPro: Requesting:', fullUrl);
                 
                 network.native(fullUrl, function(res) {
                     console.log('ShowyPro: Response received, length:', res.length);
-                    console.log('ShowyPro: First 500 chars:', res.substring(0, 500));
                     attempts = 0;
                     Lampa.Storage.set('showypro_proxy_idx', currentProxyIdx.toString());
                     onSuccess(res);
@@ -150,33 +151,24 @@
                 var seasons = this.parseHtml(html, '.videos__season', function($elem) {
                     try {
                         var dataJson = $elem.attr('data-json');
-                        console.log('ShowyPro: Season data-json:', dataJson);
                         var jsonData = JSON.parse(dataJson);
                         var title = $elem.find('.videos__season-title').text().trim();
                         return { title: title, url: jsonData.url };
-                    } catch(e) { 
-                        console.log('ShowyPro: Season parse error:', e);
-                        return null; 
-                    }
+                    } catch(e) { return null; }
                 });
 
                 var voices = this.parseHtml(html, '.videos__button', function($elem) {
                     try {
                         var dataJson = $elem.attr('data-json');
-                        console.log('ShowyPro: Voice data-json:', dataJson);
                         var jsonData = JSON.parse(dataJson);
                         var title = $elem.text().trim();
                         return { title: title, url: jsonData.url };
-                    } catch(e) { 
-                        console.log('ShowyPro: Voice parse error:', e);
-                        return null; 
-                    }
+                    } catch(e) { return null; }
                 });
 
                 var episodes = this.parseHtml(html, '.videos__movie', function($elem) {
                     try {
                         var dataJson = $elem.attr('data-json');
-                        console.log('ShowyPro: Episode data-json:', dataJson);
                         var jsonData = JSON.parse(dataJson);
                         var title = $elem.find('.videos__item-title').text().trim();
                         var season = parseInt($elem.attr('s')) || 0;
@@ -189,15 +181,10 @@
                             season: season,
                             episode: episode
                         };
-                    } catch(e) { 
-                        console.log('ShowyPro: Episode parse error:', e);
-                        return null; 
-                    }
+                    } catch(e) { return null; }
                 });
 
-                console.log('ShowyPro: Seasons found:', seasons.length);
-                console.log('ShowyPro: Voices found:', voices.length);
-                console.log('ShowyPro: Episodes found:', episodes.length);
+                console.log('ShowyPro: Seasons:', seasons.length, 'Voices:', voices.length, 'Episodes:', episodes.length);
 
                 if (seasons.length > 0) {
                     filter_find.season = seasons;
@@ -214,7 +201,6 @@
                 if (episodes.length > 0) {
                     this.displayEpisodes(episodes);
                 } else {
-                    console.log('ShowyPro: No content found, showing empty message');
                     this.empty('Контент не найден');
                 }
             };
@@ -289,11 +275,7 @@
                         title: filter_translate.season,
                         subtitle: filter_find.season[0].title,
                         items: filter_find.season.map(function(s, i) {
-                            return { 
-                                title: s.title, 
-                                selected: i === 0, 
-                                index: i 
-                            };
+                            return { title: s.title, selected: i === 0, index: i };
                         }),
                         stype: 'season'
                     });
@@ -304,31 +286,23 @@
                         title: filter_translate.voice,
                         subtitle: filter_find.voice[0].title,
                         items: filter_find.voice.map(function(v, i) {
-                            return { 
-                                title: v.title, 
-                                selected: i === 0, 
-                                index: i 
-                            };
+                            return { title: v.title, selected: i === 0, index: i };
                         }),
                         stype: 'voice'
                     });
                 }
 
                 filter.set('filter', select);
-                filter.chosen('filter', []);
             };
 
             this.displayEpisodes = function(videos) {
                 var _this = this;
                 scroll.clear();
 
-                console.log('ShowyPro: Displaying episodes:', videos.length);
-
                 videos.forEach(function(element) {
                     var quality_text = '';
                     if (element.quality && Object.keys(element.quality).length > 0) {
-                        var keys = Object.keys(element.quality);
-                        quality_text = keys[0];
+                        quality_text = Object.keys(element.quality)[0];
                     }
 
                     var html = Lampa.Template.get('online_prestige_full', {
@@ -391,7 +365,6 @@
                 images = [];
             };
 
-            // ИСПРАВЛЕНО: create() должен вызывать initialize()
             this.create = function() {
                 console.log('ShowyPro: create() called');
                 this.initialize();
@@ -476,13 +449,7 @@
                         title: e.object.title,
                         name: e.object.name,
                         original_title: e.object.original_title,
-                        original_name: e.object.original_name,
-                        poster_path: e.object.poster_path,
-                        backdrop_path: e.object.backdrop_path,
-                        release_date: e.object.release_date,
-                        first_air_date: e.object.first_air_date,
-                        number_of_seasons: e.object.number_of_seasons,
-                        number_of_episodes: e.object.number_of_episodes
+                        original_name: e.object.original_name
                     };
 
                     Lampa.Component.add('showypro', component);
@@ -499,7 +466,7 @@
             }
         });
 
-        console.log('ShowyPro plugin v4.5 loaded (initialize in create)');
+        console.log('ShowyPro plugin v4.6 loaded (fixed proxy format)');
     }
 
     if (window.appready) startPlugin();
