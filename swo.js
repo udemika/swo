@@ -7,15 +7,12 @@
 
         var WORKING_UID = 'i8nqb9vw';
         var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
-        var BASE_DOMAIN = 'showypro.com'; // БЕЗ http://
+        var BASE_DOMAIN = 'showypro.com';
         
-        // НОВЫЕ ПРОКСИ (проверенные)
         var PROXIES = [
-            'https://corsproxy.io/?',
-            'https://api.allorigins.win/raw?url=',
-            'https://cors-anywhere.herokuapp.com/',
             'https://cors.byskaz.ru/',
-            'https://corsproxy.org/?'
+            'https://corsproxy.io/?',
+            'https://api.allorigins.win/raw?url='
         ];
 
         var currentProxyIdx = parseInt(Lampa.Storage.get('showypro_proxy_idx', '0'));
@@ -24,7 +21,6 @@
         function sign(url) {
             if (url.indexOf('uid=') == -1) url = Lampa.Utils.addUrlComponent(url, 'uid=' + WORKING_UID);
             if (url.indexOf('showy_token=') == -1) url = Lampa.Utils.addUrlComponent(url, 'showy_token=' + WORKING_TOKEN);
-            if (url.indexOf('rjson=') == -1) url = Lampa.Utils.addUrlComponent(url, 'rjson=False');
             return url;
         }
 
@@ -39,6 +35,7 @@
             var last;
             var attempts = 0;
             var images = [];
+            var episodes_data = [];
             
             var filter_translate = {
                 season: 'Сезон',
@@ -53,9 +50,7 @@
             this.requestWithProxy = function(url, onSuccess, onError) {
                 var _this = this;
                 var proxy = PROXIES[currentProxyIdx];
-                
-                // ПРАВИЛЬНЫЙ ФОРМАТ: proxy + encodeURIComponent(http://url)
-                var fullUrl = proxy + encodeURIComponent('http://' + sign(url));
+                var fullUrl = proxy + 'http://' + sign(url);
                 
                 console.log('ShowyPro: Requesting:', fullUrl);
                 
@@ -136,7 +131,7 @@
                     url = BASE_DOMAIN + '/lite/fxapi?postid=' + id;
                 }
 
-                console.log('ShowyPro: API URL:', url);
+                console.log('ShowyPro: API URL:', 'http://' + url);
 
                 _this.requestWithProxy(url, function(html) {
                     _this.parseInitial(html);
@@ -151,10 +146,14 @@
                 var seasons = this.parseHtml(html, '.videos__season', function($elem) {
                     try {
                         var dataJson = $elem.attr('data-json');
+                        console.log('ShowyPro: Season data-json:', dataJson);
                         var jsonData = JSON.parse(dataJson);
                         var title = $elem.find('.videos__season-title').text().trim();
                         return { title: title, url: jsonData.url };
-                    } catch(e) { return null; }
+                    } catch(e) { 
+                        console.log('ShowyPro: Season parse error:', e);
+                        return null; 
+                    }
                 });
 
                 var voices = this.parseHtml(html, '.videos__button', function($elem) {
@@ -184,7 +183,9 @@
                     } catch(e) { return null; }
                 });
 
-                console.log('ShowyPro: Seasons:', seasons.length, 'Voices:', voices.length, 'Episodes:', episodes.length);
+                console.log('ShowyPro: Seasons found:', seasons.length);
+                console.log('ShowyPro: Voices found:', voices.length);
+                console.log('ShowyPro: Episodes found:', episodes.length);
 
                 if (seasons.length > 0) {
                     filter_find.season = seasons;
@@ -260,6 +261,8 @@
                     this.updateFilterMenu();
                 }
 
+                console.log('ShowyPro: Displaying episodes:', episodes.length);
+                
                 if (episodes.length > 0) {
                     this.displayEpisodes(episodes);
                 } else {
@@ -298,18 +301,22 @@
             this.displayEpisodes = function(videos) {
                 var _this = this;
                 scroll.clear();
+                
+                episodes_data = videos;
 
-                videos.forEach(function(element) {
+                videos.forEach(function(element, index) {
+                    // Создаем простой HTML элемент
                     var quality_text = '';
                     if (element.quality && Object.keys(element.quality).length > 0) {
                         quality_text = Object.keys(element.quality)[0];
                     }
 
-                    var html = Lampa.Template.get('online_prestige_full', {
-                        title: element.title,
-                        quality: quality_text,
-                        info: 'Серия ' + element.episode
-                    });
+                    var html = $('<div class="online-prestige selector">' +
+                        '<div class="online-prestige__body">' +
+                            '<div class="online-prestige__title">' + element.title + '</div>' +
+                            '<div class="online-prestige__info">Серия ' + element.episode + (quality_text ? ' • ' + quality_text : '') + '</div>' +
+                        '</div>' +
+                    '</div>');
 
                     html.on('hover:enter', function() {
                         _this.playVideo(element);
@@ -323,6 +330,7 @@
                     scroll.append(html);
                 });
 
+                console.log('ShowyPro: Episodes added to scroll:', videos.length);
                 Lampa.Controller.enable('content');
             };
 
@@ -386,7 +394,7 @@
                     },
                     right: function() {
                         if (Navigator.canmove('right')) Navigator.move('right');
-                        else filter.show('Фильтр', filter);
+                        else filter.show('Фильтр', 'filter');
                     },
                     up: function() {
                         if (Navigator.canmove('up')) Navigator.move('up');
@@ -423,19 +431,15 @@
         Lampa.Listener.follow('full', function(e) {
             if (e.type == 'complite') {
                 var btn = $(
-                    '<div class="full-start__button selector view--filmix_uhd">' +
+                    '<div class="full-start__button selector view--filmix">' +
                         '<svg width="128" height="118" viewBox="0 0 128 118" fill="none" xmlns="http://www.w3.org/2000/svg">' +
                             '<rect y="33" width="128" height="52" rx="5" fill="white"/>' +
                             '<path d="M20 48H26V68H20V48Z" fill="currentColor"/>' +
                             '<path d="M34 48H54V54H40V56H52V62H40V68H34V48Z" fill="currentColor"/>' +
                             '<path d="M62 48H72L76 58L80 48H90V68H84V56L78 68H74L68 56V68H62V48Z" fill="currentColor"/>' +
                             '<path d="M98 48H108V68H98V48Z" fill="currentColor"/>' +
-                            '<path d="M46 76L54 86L62 76H46Z" fill="white"/>' +
-                            '<path d="M36 90C36 87.7909 37.7909 86 40 86H88C90.2091 86 92 87.7909 92 90V108C92 110.209 90.2091 112 88 112H40C37.7909 112 36 110.209 36 108V90Z" fill="white"/>' +
-                            '<path d="M46 96V102H52V96H58V102H64V96H70V108H64V104H58V108H52V104H46V108H40V96H46Z" fill="currentColor"/>' +
-                            '<path d="M78 96H88V100H84V102H88V106H84V108H78V96Z" fill="currentColor"/>' +
                         '</svg>' +
-                        '<span>Filmix UHD</span>' +
+                        '<span>ShowyPro</span>' +
                     '</div>'
                 );
 
@@ -466,7 +470,7 @@
             }
         });
 
-        console.log('ShowyPro plugin v4.6 loaded (fixed proxy format)');
+        console.log('ShowyPro plugin v4.7 loaded (custom HTML template)');
     }
 
     if (window.appready) startPlugin();
