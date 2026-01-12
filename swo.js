@@ -19,19 +19,42 @@
         ];
 
         var currentProxyIdx = 0;
-        
-        // Определяем платформу
-        var isAndroid = Lampa.Platform.is('android');
-        
-        // Приоритет качества для разных платформ
-        var qualityPriority = isAndroid 
-            ? ['1080p', '720p', '1440p', '480p', '2160p'] // Для Android - начинаем с 1080p
-            : ['2160p', '1440p', '1080p', '720p', '480p']; // Для остальных - максимальное качество
 
         function sign(url) {
             if (url.indexOf('uid=') == -1) url = Lampa.Utils.addUrlComponent(url, 'uid=' + WORKING_UID);
             if (url.indexOf('showy_token=') == -1) url = Lampa.Utils.addUrlComponent(url, 'showy_token=' + WORKING_TOKEN);
             return url;
+        }
+
+        // ФУНКЦИЯ ДЛЯ ПРОКСИРОВАНИЯ ВИДЕО ЧЕРЕЗ LAMPAC
+        function proxyVideo(url) {
+            // Получаем базовый URL Lampac сервера
+            var lampac_url = Lampa.Manifest.plugins.find(function(p) {
+                return p.url && (p.url.indexOf('/lampac') > -1 || p.url.indexOf(':9118') > -1);
+            });
+            
+            var proxy_url;
+            
+            if (lampac_url && lampac_url.url) {
+                // Извлекаем базовый URL сервера
+                var base = lampac_url.url.split('/').slice(0, 3).join('/');
+                proxy_url = base + '/proxy?url=' + encodeURIComponent(url);
+            } else {
+                // Пробуем определить через текущий location
+                var current_host = window.location.protocol + '//' + window.location.host;
+                if (window.location.port && (window.location.port === '9118' || window.location.port === '8080')) {
+                    proxy_url = current_host + '/proxy?url=' + encodeURIComponent(url);
+                } else {
+                    // Если не нашли Lampac, пробуем стандартный порт
+                    var detected_server = 'http://78.40.195.218:9118';
+                    proxy_url = detected_server + '/proxy?url=' + encodeURIComponent(url);
+                }
+            }
+            
+            console.log('[ShowyPro] Original URL:', url);
+            console.log('[ShowyPro] Proxied URL:', proxy_url);
+            
+            return proxy_url;
         }
 
         var Network = Lampa.Request || Lampa.Reguest;
@@ -100,7 +123,6 @@
                 var _this = this;
                 
                 console.log('[ShowyPro] Initialize');
-                console.log('[ShowyPro] Platform: Android=' + isAndroid);
                 console.log('[ShowyPro] Movie object:', object.movie);
                 
                 filter.onBack = function() {
@@ -389,69 +411,32 @@
                 Lampa.Controller.enable('content');
             };
 
-            // УЛУЧШЕННЫЙ ВЫБОР КАЧЕСТВА
-            this.getBestQuality = function(streams) {
-                // Проходим по приоритету качеств
-                for (var i = 0; i < qualityPriority.length; i++) {
-                    var quality = qualityPriority[i];
-                    if (streams[quality]) {
-                        console.log('[ShowyPro] Selected quality:', quality, 'for platform:', isAndroid ? 'Android' : 'Other');
-                        return { quality: quality, url: streams[quality] };
-                    }
-                }
-                
-                // Если ничего не найдено, берём первое доступное
-                var firstQuality = Object.keys(streams)[0];
-                if (firstQuality) {
-                    return { quality: firstQuality, url: streams[firstQuality] };
-                }
-                
-                return null;
-            };
-
             this.playVideo = function(element) {
-                var _this = this;
                 var streams = element.quality || {};
                 var playlist = [];
                 
                 if (Object.keys(streams).length > 0) {
-                    // Получаем лучшее качество для платформы
-                    var bestStream = _this.getBestQuality(streams);
-                    
-                    if (bestStream) {
-                        // Добавляем лучшее качество первым
+                    // Проксируем все URL через Lampac
+                    for (var quality in streams) {
                         playlist.push({
-                            title: element.title + ' [' + bestStream.quality + ']',
-                            url: bestStream.url,
-                            quality: bestStream.quality,
+                            title: element.title + ' [' + quality + ']',
+                            url: proxyVideo(streams[quality]),  // ПРОКСИРОВАНИЕ ЧЕРЕЗ LAMPAC
+                            quality: quality,
                             season: element.season,
                             episode: element.episode
                         });
-                        
-                        // Добавляем остальные качества как альтернативы
-                        for (var quality in streams) {
-                            if (quality !== bestStream.quality) {
-                                playlist.push({
-                                    title: element.title + ' [' + quality + ']',
-                                    url: streams[quality],
-                                    quality: quality,
-                                    season: element.season,
-                                    episode: element.episode
-                                });
-                            }
-                        }
                     }
                 } else {
                     playlist.push({
                         title: element.title,
-                        url: element.url,
+                        url: proxyVideo(element.url),  // ПРОКСИРОВАНИЕ ЧЕРЕЗ LAMPAC
                         season: element.season,
                         episode: element.episode
                     });
                 }
 
                 if (playlist.length > 0) {
-                    console.log('[ShowyPro] Playing:', playlist[0].url);
+                    console.log('[ShowyPro] Playing via Lampac proxy:', playlist[0].url);
                     Lampa.Player.play(playlist[0]);
                     if (playlist.length > 1) {
                         Lampa.Player.playlist(playlist);
@@ -564,7 +549,7 @@
             }
         });
 
-        console.log('[ShowyPro] Plugin v10.0 loaded - Android quality optimization');
+        console.log('[ShowyPro] Plugin v10.0 with Lampac Proxy loaded');
     }
 
     if (window.appready) startPlugin();
