@@ -10,9 +10,9 @@
         var BASE_DOMAIN = 'showypro.com';
         
         var PROXIES = [
+            'https://api.allorigins.win/raw?url=',
             'https://cors.byskaz.ru/',
-            'https://corsproxy.io/?',
-            'https://api.allorigins.win/raw?url='
+            'https://corsproxy.io/?'
         ];
 
         var currentProxyIdx = parseInt(Lampa.Storage.get('showypro_proxy_idx', '0'));
@@ -56,6 +56,19 @@
                 
                 network.native(fullUrl, function(res) {
                     console.log('ShowyPro: Response received, length:', res.length);
+                    console.log('ShowyPro: First 200 chars:', res.substring(0, 200));
+                    
+                    // Проверка на ошибку от ShowyPro
+                    if (res.length < 100 || res.indexOf('videos__') === -1) {
+                        console.log('ShowyPro: Invalid response, trying next proxy');
+                        attempts++;
+                        if (attempts < PROXIES.length) {
+                            currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
+                            _this.requestWithProxy(url, onSuccess, onError);
+                            return;
+                        }
+                    }
+                    
                     attempts = 0;
                     Lampa.Storage.set('showypro_proxy_idx', currentProxyIdx.toString());
                     onSuccess(res);
@@ -92,6 +105,34 @@
                 return results;
             };
 
+            this.searchByTitle = function(title, callback) {
+                var _this = this;
+                var searchUrl = BASE_DOMAIN + '/lite/fxapi?query=' + encodeURIComponent(title);
+                
+                console.log('ShowyPro: Searching by title:', title);
+                
+                _this.requestWithProxy(searchUrl, function(html) {
+                    // Ищем первый результат поиска
+                    var results = _this.parseHtml(html, '.videos__item[data-json]', function($elem) {
+                        try {
+                            var dataJson = $elem.attr('data-json');
+                            var jsonData = JSON.parse(dataJson);
+                            return jsonData;
+                        } catch(e) { return null; }
+                    });
+                    
+                    if (results.length > 0) {
+                        console.log('ShowyPro: Search found results:', results.length);
+                        callback(results[0].url);
+                    } else {
+                        console.log('ShowyPro: No search results');
+                        callback(null);
+                    }
+                }, function() {
+                    callback(null);
+                });
+            };
+
             this.initialize = function() {
                 var _this = this;
                 
@@ -124,11 +165,33 @@
                 
                 Lampa.Controller.enable('content');
 
-                var id = object.movie.kinopoisk_id || object.movie.kp_id || object.movie.id;
-                var url = BASE_DOMAIN + '/lite/fxapi?kinopoisk_id=' + id;
+                // Приоритет: kinopoisk_id > imdb_id > название
+                var url = null;
                 
-                if (!object.movie.kinopoisk_id && !object.movie.kp_id) {
-                    url = BASE_DOMAIN + '/lite/fxapi?postid=' + id;
+                if (object.movie.kinopoisk_id || object.movie.kp_id) {
+                    var kpId = object.movie.kinopoisk_id || object.movie.kp_id;
+                    url = BASE_DOMAIN + '/lite/fxapi?kinopoisk_id=' + kpId;
+                    console.log('ShowyPro: Using kinopoisk_id:', kpId);
+                } else if (object.movie.imdb_id) {
+                    url = BASE_DOMAIN + '/lite/fxapi?imdb_id=' + object.movie.imdb_id;
+                    console.log('ShowyPro: Using imdb_id:', object.movie.imdb_id);
+                } else {
+                    // Поиск по названию
+                    var title = object.movie.title || object.movie.name || object.movie.original_title || object.movie.original_name;
+                    console.log('ShowyPro: No ID found, searching by title:', title);
+                    
+                    _this.searchByTitle(title, function(foundUrl) {
+                        if (foundUrl) {
+                            _this.requestWithProxy(foundUrl, function(html) {
+                                _this.parseInitial(html);
+                            }, function() {
+                                _this.empty('Ошибка загрузки данных');
+                            });
+                        } else {
+                            _this.empty('Контент не найден');
+                        }
+                    });
+                    return;
                 }
 
                 console.log('ShowyPro: API URL:', 'http://' + url);
@@ -305,7 +368,6 @@
                 episodes_data = videos;
 
                 videos.forEach(function(element, index) {
-                    // Создаем простой HTML элемент
                     var quality_text = '';
                     if (element.quality && Object.keys(element.quality).length > 0) {
                         quality_text = Object.keys(element.quality)[0];
@@ -470,7 +532,7 @@
             }
         });
 
-        console.log('ShowyPro plugin v4.7 loaded (custom HTML template)');
+        console.log('ShowyPro plugin v4.8 loaded (search by title support)');
     }
 
     if (window.appready) startPlugin();
