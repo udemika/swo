@@ -10,9 +10,12 @@
         var BASE_DOMAIN = 'showypro.com';
         
         var PROXIES = [
-            'https://api.allorigins.win/raw?url=',
             'https://cors.byskaz.ru/',
-            'https://corsproxy.io/?'
+            'http://85.198.110.239:8975/',
+            'http://91.184.245.56:8975/',
+            'https://apn10.akter-black.com/',
+            'https://apn5.akter-black.com/',
+            'https://cors557.deno.dev/'
         ];
 
         var currentProxyIdx = parseInt(Lampa.Storage.get('showypro_proxy_idx', '0'));
@@ -57,6 +60,7 @@
                 network.native(fullUrl, function(res) {
                     console.log('ShowyPro: Response received, length:', res.length);
                     console.log('ShowyPro: First 200 chars:', res.substring(0, 200));
+                    console.log('ShowyPro: FULL RESPONSE:', res);
                     
                     // Проверка на ошибку от ShowyPro
                     if (res.length < 100 || res.indexOf('videos__') === -1) {
@@ -532,7 +536,7 @@
             }
         });
 
-        console.log('ShowyPro plugin v4.8 loaded (search by title support)');
+        console.log('ShowyPro plugin v4.9 loaded (debug + original proxies)');
     }
 
     if (window.appready) startPlugin();
