@@ -3,11 +3,8 @@
 
     /**
      * Filmix UHD (showypro.com)
-     * UI: использовать системные окна Lampa.Select (НЕ Lampa.Filter боковую панель).
-     * Навигация данных showypro:
-     * - .videos__item.videos__season[data-json] -> {method:"link", url:...} (сезоны)
-     * - .videos__button[data-json] -> {method:"link", url:...} (переводы)
-     * - .videos__item.videos__movie[data-json] -> {method:"play", url:..., quality:{...}} (серии)
+     * UI как на твоём скрине: список серий в окне Interaction (справа),
+     * а выбор сезона/перевода открывается системным окном Lampa.Select (НЕ Lampa.Filter).
      */
 
     function startPlugin() {
@@ -55,7 +52,7 @@
             var voices = [];
             var items = [];
 
-            // Сезоны
+            // seasons (method:link)
             $dom.find('.videos__item.videos__season[data-json]').each(function () {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
@@ -68,7 +65,7 @@
                 } catch (e) { }
             });
 
-            // Переводы
+            // voices (method:link)
             $dom.find('.videos__button[data-json]').each(function () {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
@@ -81,7 +78,7 @@
                 } catch (e) { }
             });
 
-            // Серии
+            // episodes (method:play)
             $dom.find('.videos__item.videos__movie[data-json], .videos__item[data-json]').each(function () {
                 try {
                     var json = JSON.parse($(this).attr('data-json'));
@@ -113,7 +110,6 @@
             var url = item.url;
             try {
                 if (item.qualityMap) {
-                    // В Lampa дефолт качества хранится в storage (часто как video_quality_default)
                     var q = Lampa.Storage.get('video_quality_default');
                     if (q && item.qualityMap[q]) url = sign(item.qualityMap[q]);
                 }
@@ -126,7 +122,6 @@
 
             var kp = movie.kinopoisk_id || movie.kinopoiskid || movie.kinopoisk || movie.kp_id || movie.kp;
             var id = kp || movie.id;
-
             var url = BASE_DOMAIN + '/lite/fxapi?kinopoisk_id=' + encodeURIComponent(id);
 
             var attempts = 0;
@@ -156,7 +151,6 @@
 
         function displayFilmix(resText, movie, fetchCallback) {
             var parsed = parseResponse(resText);
-
             var seasons = parsed.seasons;
             var voices = parsed.voices;
             var items = parsed.items;
@@ -167,12 +161,13 @@
             var savedVoiceIdx = parseInt(Lampa.Storage.get('fx_uhd_voice_idx', '0'));
             if (isNaN(savedVoiceIdx) || savedVoiceIdx < 0) savedVoiceIdx = 0;
 
-            var lastFilter = Lampa.Storage.get('fx_uhd_last_filter', 'season'); // 'season' | 'voice'
+            var lastFilter = Lampa.Storage.get('fx_uhd_last_filter', 'season'); // season|voice
+            if (lastFilter !== 'season' && lastFilter !== 'voice') lastFilter = 'season';
 
             if (savedSeasonIdx >= seasons.length) savedSeasonIdx = 0;
             if (savedVoiceIdx >= voices.length) savedVoiceIdx = 0;
 
-            // Если пришёл только список сезонов — автоматически загружаем сохранённый сезон
+            // Если пришёл только список сезонов — сразу идём в сохранённый сезон
             if (!items.length && seasons.length && !voices.length) {
                 Lampa.Storage.set('fx_uhd_season_idx', String(savedSeasonIdx));
                 Lampa.Storage.set('fx_uhd_last_filter', 'season');
@@ -180,15 +175,18 @@
                 return;
             }
 
+            var enabled_controller = null;
+            try { enabled_controller = Lampa.Controller.enabled().name; } catch (e) { }
+
+            function closeSelectAndReload(url) {
+                setTimeout(function () { try { Lampa.Select.close(); } catch (e) { } }, 10);
+                try {
+                    if (enabled_controller) Lampa.Controller.toggle(enabled_controller);
+                } catch (e) { }
+                fetchCallback(url);
+            }
+
             function openSystemFilterSelect() {
-                var enabled = Lampa.Controller.enabled().name;
-
-                function closeSelectAndReload(url) {
-                    setTimeout(function () { try { Lampa.Select.close(); } catch (e) { } }, 10);
-                    try { Lampa.Controller.toggle(enabled); } catch (e) { }
-                    fetchCallback(url);
-                }
-
                 function openRoot() {
                     var list = [];
 
@@ -212,17 +210,13 @@
                         });
                     }
 
-                    // Если нет сезонов/переводов — нечего открывать
-                    if (list.length === 1) {
-                        Lampa.Noty.show('Filmix UHD: Нет фильтров');
-                        return;
-                    }
-
                     Lampa.Select.show({
                         title: 'Фильтр',
                         items: list,
                         onBack: function () {
-                            try { Lampa.Controller.toggle(enabled); } catch (e) { }
+                            try {
+                                if (enabled_controller) Lampa.Controller.toggle(enabled_controller);
+                            } catch (e) { }
                         },
                         onSelect: function (a) {
                             if (a.reset) {
@@ -248,11 +242,7 @@
                     Lampa.Select.show({
                         title: 'Сезон',
                         items: seasons.map(function (s, i) {
-                            return {
-                                title: s.title,
-                                index: i,
-                                selected: i === savedSeasonIdx
-                            };
+                            return { title: s.title, index: i, selected: i === savedSeasonIdx };
                         }),
                         onBack: function () { openRoot(); },
                         onSelect: function (a) {
@@ -273,11 +263,7 @@
                     Lampa.Select.show({
                         title: 'Перевод',
                         items: voices.map(function (v, i) {
-                            return {
-                                title: v.title,
-                                index: i,
-                                selected: i === savedVoiceIdx
-                            };
+                            return { title: v.title, index: i, selected: i === savedVoiceIdx };
                         }),
                         onBack: function () { openRoot(); },
                         onSelect: function (a) {
@@ -294,16 +280,13 @@
                     });
                 }
 
-                // Открывать сразу последний изменённый раздел, чтобы было ближе к UX on.js
+                // Как ты просил ранее — открывать сразу последний раздел
                 if (lastFilter === 'voice' && voices.length) openVoices();
                 else if (lastFilter === 'season' && seasons.length) openSeasons();
                 else openRoot();
             }
 
             function playItem(item) {
-                var url = pickQualityUrl(item);
-
-                // Плейлист (все серии текущего ответа)
                 var playlist = [];
                 items.forEach(function (it) {
                     playlist.push({
@@ -316,20 +299,19 @@
                     });
                 });
 
-                var element = {
+                Lampa.Player.play({
                     title: item.title,
-                    url: url,
+                    url: pickQualityUrl(item),
                     movie: movie,
                     isonline: true,
                     season: item.season,
                     episode: item.episode,
                     playlist: playlist
-                };
-
-                Lampa.Player.play(element);
+                });
             }
 
-            // UI карточки
+            // Главное: показываем список серий через Interaction (как на скрине),
+            // а фильтр — через системный Select.
             if (typeof Lampa.Interaction !== 'undefined') {
                 var interaction = new Lampa.Interaction({
                     card: movie,
@@ -351,9 +333,17 @@
                     onBack: function () { Lampa.Activity.backward(); }
                 });
 
+                // Чтобы в строке сверху (рядом с «Фильтр») было понятно что выбрано
+                try {
+                    var label = [];
+                    if (seasons.length && seasons[savedSeasonIdx]) label.push(seasons[savedSeasonIdx].title);
+                    if (voices.length && voices[savedVoiceIdx]) label.push(voices[savedVoiceIdx].title);
+                    if (label.length) interaction.head(label.join(' • '));
+                } catch (e) { }
+
                 interaction.content(items);
             } else {
-                // Fallback: просто системный список серий
+                // Fallback
                 Lampa.Select.show({
                     title: (movie.title || movie.name || 'Filmix UHD'),
                     items: items.map(function (i) { return { title: i.title, value: i }; }),
