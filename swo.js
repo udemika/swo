@@ -19,6 +19,14 @@
         ];
 
         var currentProxyIdx = 0;
+        
+        // Определяем платформу
+        var isAndroid = Lampa.Platform.is('android');
+        
+        // Приоритет качества для разных платформ
+        var qualityPriority = isAndroid 
+            ? ['1080p', '720p', '1440p', '480p', '2160p'] // Для Android - начинаем с 1080p
+            : ['2160p', '1440p', '1080p', '720p', '480p']; // Для остальных - максимальное качество
 
         function sign(url) {
             if (url.indexOf('uid=') == -1) url = Lampa.Utils.addUrlComponent(url, 'uid=' + WORKING_UID);
@@ -40,7 +48,7 @@
             var current_kinopoisk_id = null;
             var current_season = null;
             var current_voice = null;
-            var voice_params = []; // Массив параметров t для озвучек
+            var voice_params = [];
             
             var filter_translate = {
                 season: 'Сезон',
@@ -92,6 +100,7 @@
                 var _this = this;
                 
                 console.log('[ShowyPro] Initialize');
+                console.log('[ShowyPro] Platform: Android=' + isAndroid);
                 console.log('[ShowyPro] Movie object:', object.movie);
                 
                 filter.onBack = function() {
@@ -109,7 +118,6 @@
                         } else if (a.stype == 'voice') {
                             current_voice = b.index;
                             console.log('[ShowyPro] Voice selected index:', current_voice, 'param t:', voice_params[current_voice]);
-                            // Делаем новый запрос с выбранной озвучкой используя параметр t
                             _this.loadVoice(voice_params[current_voice]);
                         }
                         
@@ -204,7 +212,6 @@
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
                 
-                // Используем параметр t из кнопки озвучки
                 var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
                 if (current_season) url += '&s=' + current_season;
                 url += '&t=' + voiceParam;
@@ -227,7 +234,6 @@
                 try {
                     var $dom = $('<div>' + html + '</div>');
                     
-                    // Парсим озвучки только при первой загрузке
                     if (!keepVoices) {
                         var $voiceButtons = $dom.find('.videos__button');
                         var voices = [];
@@ -243,7 +249,6 @@
                                     var jsonData = JSON.parse(dataJson);
                                     var url = jsonData.url || '';
                                     
-                                    // Извлекаем параметр t из URL
                                     var tMatch = url.match(/[?&]t=(\d+)/);
                                     var tParam = tMatch ? parseInt(tMatch[1]) : voices.length;
                                     
@@ -266,7 +271,6 @@
                         }
                     }
                     
-                    // Парсим эпизоды
                     var $episodes = $dom.find('.videos__item.videos__movie');
                     var episodes = [];
                     
@@ -385,19 +389,57 @@
                 Lampa.Controller.enable('content');
             };
 
+            // УЛУЧШЕННЫЙ ВЫБОР КАЧЕСТВА
+            this.getBestQuality = function(streams) {
+                // Проходим по приоритету качеств
+                for (var i = 0; i < qualityPriority.length; i++) {
+                    var quality = qualityPriority[i];
+                    if (streams[quality]) {
+                        console.log('[ShowyPro] Selected quality:', quality, 'for platform:', isAndroid ? 'Android' : 'Other');
+                        return { quality: quality, url: streams[quality] };
+                    }
+                }
+                
+                // Если ничего не найдено, берём первое доступное
+                var firstQuality = Object.keys(streams)[0];
+                if (firstQuality) {
+                    return { quality: firstQuality, url: streams[firstQuality] };
+                }
+                
+                return null;
+            };
+
             this.playVideo = function(element) {
-                var playlist = [];
+                var _this = this;
                 var streams = element.quality || {};
+                var playlist = [];
                 
                 if (Object.keys(streams).length > 0) {
-                    for (var quality in streams) {
+                    // Получаем лучшее качество для платформы
+                    var bestStream = _this.getBestQuality(streams);
+                    
+                    if (bestStream) {
+                        // Добавляем лучшее качество первым
                         playlist.push({
-                            title: element.title + ' [' + quality + ']',
-                            url: streams[quality],
-                            quality: quality,
+                            title: element.title + ' [' + bestStream.quality + ']',
+                            url: bestStream.url,
+                            quality: bestStream.quality,
                             season: element.season,
                             episode: element.episode
                         });
+                        
+                        // Добавляем остальные качества как альтернативы
+                        for (var quality in streams) {
+                            if (quality !== bestStream.quality) {
+                                playlist.push({
+                                    title: element.title + ' [' + quality + ']',
+                                    url: streams[quality],
+                                    quality: quality,
+                                    season: element.season,
+                                    episode: element.episode
+                                });
+                            }
+                        }
                     }
                 } else {
                     playlist.push({
@@ -409,6 +451,7 @@
                 }
 
                 if (playlist.length > 0) {
+                    console.log('[ShowyPro] Playing:', playlist[0].url);
                     Lampa.Player.play(playlist[0]);
                     if (playlist.length > 1) {
                         Lampa.Player.playlist(playlist);
@@ -521,7 +564,7 @@
             }
         });
 
-        console.log('[ShowyPro] Plugin v9.0 loaded - Fixed voice parameter (t instead of p)');
+        console.log('[ShowyPro] Plugin v10.0 loaded - Android quality optimization');
     }
 
     if (window.appready) startPlugin();
