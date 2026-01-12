@@ -1,13 +1,6 @@
 (function () {
     'use strict';
 
-    /**
-     * ShowyPro Plugin для Lampa v4.1
-     * - Кнопка "Filmix UHD" в контекстном меню
-     * - Окно на весь экран с фильтрами сверху
-     * - Боковое меню при нажатии "Фильтр"
-     */
-
     function startPlugin() {
         if (window.showypro_plugin_loaded) return;
         window.showypro_plugin_loaded = true;
@@ -37,7 +30,6 @@
 
         var Network = Lampa.Request || Lampa.Reguest;
 
-        // ========== КОМПОНЕНТ КАК В ON.JS ==========
         function component(object) {
             var network = new Network();
             var scroll = new Lampa.Scroll({ mask: true, over: true });
@@ -404,7 +396,7 @@
             };
         }
 
-        // ========== ДОБАВЛЕНИЕ КНОПКИ "FILMIX UHD" ==========
+        // ========== КНОПКА "FILMIX UHD" (ИСПРАВЛЕНО) ==========
         Lampa.Listener.follow('full', function(e) {
             if (e.type == 'complite') {
                 var btn = $(
@@ -425,12 +417,31 @@
                 );
 
                 btn.on('hover:enter', function() {
+                    // ИСПРАВЛЕНО: создаем чистый объект без циклических ссылок
+                    var movieData = {
+                        id: e.object.id,
+                        kinopoisk_id: e.object.kinopoisk_id,
+                        kp_id: e.object.kp_id,
+                        imdb_id: e.object.imdb_id,
+                        tmdb_id: e.object.tmdb_id,
+                        title: e.object.title,
+                        name: e.object.name,
+                        original_title: e.object.original_title,
+                        original_name: e.object.original_name,
+                        poster_path: e.object.poster_path,
+                        backdrop_path: e.object.backdrop_path,
+                        release_date: e.object.release_date,
+                        first_air_date: e.object.first_air_date,
+                        number_of_seasons: e.object.number_of_seasons,
+                        number_of_episodes: e.object.number_of_episodes
+                    };
+
                     Lampa.Component.add('showypro', component);
                     Lampa.Activity.push({
                         url: '',
-                        title: 'ShowyPro - ' + (e.object.title || e.object.name),
+                        title: 'ShowyPro - ' + (movieData.title || movieData.name),
                         component: 'showypro',
-                        movie: e.object,
+                        movie: movieData,
                         page: 1
                     });
                 });
@@ -439,7 +450,7 @@
             }
         });
 
-        console.log('ShowyPro plugin v4.1 loaded (with Filmix UHD button)');
+        console.log('ShowyPro plugin v4.2 loaded (fixed circular reference)');
     }
 
     if (window.appready) startPlugin();
