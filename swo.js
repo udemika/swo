@@ -53,18 +53,24 @@
             this.requestWithProxy = function(url, onSuccess, onError) {
                 var _this = this;
                 var proxy = PROXIES[currentProxyIdx];
+                var fullUrl = proxy + sign(url);
                 
-                network.native(proxy + sign(url), function(res) {
+                console.log('ShowyPro: Requesting:', fullUrl);
+                
+                network.native(fullUrl, function(res) {
+                    console.log('ShowyPro: Response received, length:', res.length);
+                    console.log('ShowyPro: First 500 chars:', res.substring(0, 500));
                     attempts = 0;
                     Lampa.Storage.set('showypro_proxy_idx', currentProxyIdx.toString());
                     onSuccess(res);
                 }, function(err) {
                     attempts++;
-                    console.log('ShowyPro: Proxy ' + proxy + ' failed');
+                    console.log('ShowyPro: Proxy ' + proxy + ' failed, attempt ' + attempts);
                     if (attempts < PROXIES.length) {
                         currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
                         _this.requestWithProxy(url, onSuccess, onError);
                     } else {
+                        console.log('ShowyPro: All proxies failed');
                         onError(err);
                     }
                 }, false, { dataType: 'text' });
@@ -74,10 +80,16 @@
                 var results = [];
                 try {
                     var $dom = $('<div>' + html + '</div>');
-                    $dom.find(selector).each(function() {
+                    console.log('ShowyPro: Searching for selector:', selector);
+                    var elements = $dom.find(selector);
+                    console.log('ShowyPro: Found elements:', elements.length);
+                    
+                    elements.each(function() {
                         var data = parseFunc($(this));
                         if (data) results.push(data);
                     });
+                    
+                    console.log('ShowyPro: Parsed results:', results.length);
                 } catch(e) {
                     console.log('ShowyPro parse error:', e);
                 }
@@ -86,6 +98,9 @@
 
             this.initialize = function() {
                 var _this = this;
+                
+                console.log('ShowyPro: Initialize called');
+                console.log('ShowyPro: Movie object:', object.movie);
                 
                 filter.onBack = function() {
                     _this.start();
@@ -120,6 +135,8 @@
                     url = BASE_DOMAIN + '/lite/fxapi?postid=' + id;
                 }
 
+                console.log('ShowyPro: API URL:', url);
+
                 _this.requestWithProxy(url, function(html) {
                     _this.parseInitial(html);
                 }, function() {
@@ -128,25 +145,39 @@
             };
 
             this.parseInitial = function(html) {
+                console.log('ShowyPro: parseInitial started');
+                
                 var seasons = this.parseHtml(html, '.videos__season', function($elem) {
                     try {
-                        var jsonData = JSON.parse($elem.attr('data-json'));
+                        var dataJson = $elem.attr('data-json');
+                        console.log('ShowyPro: Season data-json:', dataJson);
+                        var jsonData = JSON.parse(dataJson);
                         var title = $elem.find('.videos__season-title').text().trim();
                         return { title: title, url: jsonData.url };
-                    } catch(e) { return null; }
+                    } catch(e) { 
+                        console.log('ShowyPro: Season parse error:', e);
+                        return null; 
+                    }
                 });
 
                 var voices = this.parseHtml(html, '.videos__button', function($elem) {
                     try {
-                        var jsonData = JSON.parse($elem.attr('data-json'));
+                        var dataJson = $elem.attr('data-json');
+                        console.log('ShowyPro: Voice data-json:', dataJson);
+                        var jsonData = JSON.parse(dataJson);
                         var title = $elem.text().trim();
                         return { title: title, url: jsonData.url };
-                    } catch(e) { return null; }
+                    } catch(e) { 
+                        console.log('ShowyPro: Voice parse error:', e);
+                        return null; 
+                    }
                 });
 
                 var episodes = this.parseHtml(html, '.videos__movie', function($elem) {
                     try {
-                        var jsonData = JSON.parse($elem.attr('data-json'));
+                        var dataJson = $elem.attr('data-json');
+                        console.log('ShowyPro: Episode data-json:', dataJson);
+                        var jsonData = JSON.parse(dataJson);
                         var title = $elem.find('.videos__item-title').text().trim();
                         var season = parseInt($elem.attr('s')) || 0;
                         var episode = parseInt($elem.attr('e')) || 0;
@@ -158,8 +189,15 @@
                             season: season,
                             episode: episode
                         };
-                    } catch(e) { return null; }
+                    } catch(e) { 
+                        console.log('ShowyPro: Episode parse error:', e);
+                        return null; 
+                    }
                 });
+
+                console.log('ShowyPro: Seasons found:', seasons.length);
+                console.log('ShowyPro: Voices found:', voices.length);
+                console.log('ShowyPro: Episodes found:', episodes.length);
 
                 if (seasons.length > 0) {
                     filter_find.season = seasons;
@@ -176,6 +214,7 @@
                 if (episodes.length > 0) {
                     this.displayEpisodes(episodes);
                 } else {
+                    console.log('ShowyPro: No content found, showing empty message');
                     this.empty('Контент не найден');
                 }
             };
@@ -283,6 +322,8 @@
                 var _this = this;
                 scroll.clear();
 
+                console.log('ShowyPro: Displaying episodes:', videos.length);
+
                 videos.forEach(function(element) {
                     var quality_text = '';
                     if (element.quality && Object.keys(element.quality).length > 0) {
@@ -350,7 +391,6 @@
                 images = [];
             };
 
-            // ОБЯЗАТЕЛЬНЫЙ МЕТОД create()
             this.create = function() {
                 return this.render();
             };
@@ -456,7 +496,7 @@
             }
         });
 
-        console.log('ShowyPro plugin v4.3 loaded (fixed create method)');
+        console.log('ShowyPro plugin v4.4 loaded (with debug logging)');
     }
 
     if (window.appready) startPlugin();
