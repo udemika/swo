@@ -40,6 +40,7 @@
             var current_kinopoisk_id = null;
             var current_season = null;
             var current_voice = null;
+            var voice_params = []; // Массив параметров t для озвучек
             
             var filter_translate = {
                 season: 'Сезон',
@@ -101,14 +102,15 @@
                     if (type == 'filter') {
                         if (a.stype == 'season') {
                             current_season = filter_find.season[b.index].season;
-                            current_voice = 0; // Сбрасываем на первую озвучку
+                            current_voice = 0;
                             filter_find.voice = [];
+                            voice_params = [];
                             _this.loadSeason(current_season);
                         } else if (a.stype == 'voice') {
                             current_voice = b.index;
-                            console.log('[ShowyPro] Voice selected:', current_voice, 'index:', b.index);
-                            // Делаем новый запрос с выбранной озвучкой
-                            _this.loadVoice(b.index);
+                            console.log('[ShowyPro] Voice selected index:', current_voice, 'param t:', voice_params[current_voice]);
+                            // Делаем новый запрос с выбранной озвучкой используя параметр t
+                            _this.loadVoice(voice_params[current_voice]);
                         }
                         
                         setTimeout(Lampa.Select.close, 10);
@@ -123,7 +125,6 @@
                 
                 Lampa.Controller.enable('content');
 
-                // Используем только kinopoisk_id
                 if (object.movie.kinopoisk_id || object.movie.kp_id) {
                     current_kinopoisk_id = object.movie.kinopoisk_id || object.movie.kp_id;
                     var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
@@ -149,7 +150,6 @@
                 try {
                     var $dom = $('<div>' + html + '</div>');
                     
-                    // Парсим сезоны
                     var $seasons = $dom.find('.videos__season-title');
                     var seasons = [];
                     
@@ -167,14 +167,12 @@
                     console.log('[ShowyPro] Seasons found:', seasons.length);
 
                     if (seasons.length > 0) {
-                        // Это сериал
                         filter_find.season = seasons;
                         current_season = 1;
                         current_voice = 0;
                         _this.updateFilterMenu();
                         _this.loadSeason(1);
                     } else {
-                        // Это фильм - парсим сразу
                         _this.parseContent(html);
                     }
                 } catch(e) {
@@ -201,28 +199,27 @@
                 });
             };
 
-            this.loadVoice = function(voiceIdx) {
+            this.loadVoice = function(voiceParam) {
                 var _this = this;
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
                 
-                // ВАЖНО: параметр p начинается с 1, а не с 0
+                // Используем параметр t из кнопки озвучки
                 var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
                 if (current_season) url += '&s=' + current_season;
-                url += '&p=' + (voiceIdx + 1);  // +1 потому что индекс с 0, а параметр с 1
+                url += '&t=' + voiceParam;
                 url = sign(url);
                 
-                console.log('[ShowyPro] Loading voice index:', voiceIdx, 'param p:', (voiceIdx + 1));
+                console.log('[ShowyPro] Loading voice with t:', voiceParam);
                 console.log('[ShowyPro] Request URL:', url);
                 
                 this.requestWithProxy(url, function(html) {
-                    _this.parseContent(html, true); // true = не обновлять список озвучек
+                    _this.parseContent(html, true);
                 }, function() {
                     _this.empty('Ошибка загрузки озвучки');
                 });
             };
 
-            // ИСПРАВЛЕННЫЙ ПАРСИНГ КОНТЕНТА
             this.parseContent = function(html, keepVoices) {
                 var _this = this;
                 console.log('[ShowyPro] parseContent - parsing episodes and voices');
@@ -230,19 +227,38 @@
                 try {
                     var $dom = $('<div>' + html + '</div>');
                     
-                    // Парсим озвучки только если это первая загрузка
+                    // Парсим озвучки только при первой загрузке
                     if (!keepVoices) {
-                        var $voices = $dom.find('.videos__button');
+                        var $voiceButtons = $dom.find('.videos__button');
                         var voices = [];
+                        voice_params = [];
                         
-                        $voices.each(function() {
-                            var title = $(this).text().trim();
-                            if (title) {
-                                voices.push({ title: title });
+                        $voiceButtons.each(function() {
+                            var $btn = $(this);
+                            var title = $btn.text().trim();
+                            var dataJson = $btn.attr('data-json');
+                            
+                            if (title && dataJson) {
+                                try {
+                                    var jsonData = JSON.parse(dataJson);
+                                    var url = jsonData.url || '';
+                                    
+                                    // Извлекаем параметр t из URL
+                                    var tMatch = url.match(/[?&]t=(\d+)/);
+                                    var tParam = tMatch ? parseInt(tMatch[1]) : voices.length;
+                                    
+                                    voices.push({ title: title });
+                                    voice_params.push(tParam);
+                                    
+                                    console.log('[ShowyPro] Voice:', title, 't=' + tParam);
+                                } catch(e) {
+                                    console.log('[ShowyPro] Voice button parse error:', e);
+                                }
                             }
                         });
 
                         console.log('[ShowyPro] Voices found:', voices.length);
+                        console.log('[ShowyPro] Voice params:', voice_params);
                         
                         if (voices.length > 0) {
                             filter_find.voice = voices;
@@ -251,7 +267,7 @@
                     }
                     
                     // Парсим эпизоды
-                    var $episodes = $dom.find('.videos__item');
+                    var $episodes = $dom.find('.videos__item.videos__movie');
                     var episodes = [];
                     
                     $episodes.each(function() {
@@ -373,7 +389,6 @@
                 var playlist = [];
                 var streams = element.quality || {};
                 
-                // Если есть качества, добавляем их
                 if (Object.keys(streams).length > 0) {
                     for (var quality in streams) {
                         playlist.push({
@@ -385,7 +400,6 @@
                         });
                     }
                 } else {
-                    // Если нет качеств, используем прямую ссылку
                     playlist.push({
                         title: element.title,
                         url: element.url,
@@ -507,7 +521,7 @@
             }
         });
 
-        console.log('[ShowyPro] Plugin v8.0 loaded - Voice selection fixed');
+        console.log('[ShowyPro] Plugin v9.0 loaded - Fixed voice parameter (t instead of p)');
     }
 
     if (window.appready) startPlugin();
