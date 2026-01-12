@@ -350,7 +350,15 @@
                 images = [];
             };
 
+            // ОБЯЗАТЕЛЬНЫЙ МЕТОД create()
+            this.create = function() {
+                return this.render();
+            };
+
             this.start = function() {
+                var _this = this;
+                if (Lampa.Activity.active().activity !== _this.activity) return;
+                
                 Lampa.Controller.add('content', {
                     toggle: function() {
                         Lampa.Controller.collectionSet(scroll.render(), files.render());
@@ -396,7 +404,6 @@
             };
         }
 
-        // ========== КНОПКА "FILMIX UHD" (ИСПРАВЛЕНО) ==========
         Lampa.Listener.follow('full', function(e) {
             if (e.type == 'complite') {
                 var btn = $(
@@ -417,7 +424,6 @@
                 );
 
                 btn.on('hover:enter', function() {
-                    // ИСПРАВЛЕНО: создаем чистый объект без циклических ссылок
                     var movieData = {
                         id: e.object.id,
                         kinopoisk_id: e.object.kinopoisk_id,
@@ -450,7 +456,7 @@
             }
         });
 
-        console.log('ShowyPro plugin v4.2 loaded (fixed circular reference)');
+        console.log('ShowyPro plugin v4.3 loaded (fixed create method)');
     }
 
     if (window.appready) startPlugin();
