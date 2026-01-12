@@ -391,7 +391,10 @@
                 images = [];
             };
 
+            // ИСПРАВЛЕНО: create() должен вызывать initialize()
             this.create = function() {
+                console.log('ShowyPro: create() called');
+                this.initialize();
                 return this.render();
             };
 
@@ -496,7 +499,7 @@
             }
         });
 
-        console.log('ShowyPro plugin v4.4 loaded (with debug logging)');
+        console.log('ShowyPro plugin v4.5 loaded (initialize in create)');
     }
 
     if (window.appready) startPlugin();
