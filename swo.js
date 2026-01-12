@@ -2,10 +2,10 @@
     'use strict';
 
     /**
-     * ShowyPro Plugin для Lampa v4.0
-     * - Окно на весь экран как в on.js
-     * - Кнопки "Источник" и "Фильтр" сверху
-     * - Боковое меню открывается при нажатии "Фильтр"
+     * ShowyPro Plugin для Lampa v4.1
+     * - Кнопка "Filmix UHD" в контекстном меню
+     * - Окно на весь экран с фильтрами сверху
+     * - Боковое меню при нажатии "Фильтр"
      */
 
     function startPlugin() {
@@ -58,7 +58,6 @@
                 voice: []
             };
 
-            // Запрос с ротацией прокси
             this.requestWithProxy = function(url, onSuccess, onError) {
                 var _this = this;
                 var proxy = PROXIES[currentProxyIdx];
@@ -79,7 +78,6 @@
                 }, false, { dataType: 'text' });
             };
 
-            // Парсинг HTML
             this.parseHtml = function(html, selector, parseFunc) {
                 var results = [];
                 try {
@@ -94,18 +92,15 @@
                 return results;
             };
 
-            // Инициализация (КАК В ON.JS)
             this.initialize = function() {
                 var _this = this;
                 
-                // Настройка обработчиков фильтра
                 filter.onBack = function() {
                     _this.start();
                 };
 
                 filter.onSelect = function(type, a, b) {
                     if (type == 'filter') {
-                        // Обработка выбора сезона или озвучки
                         var url = filter_find[a.stype][b.index].url;
                         
                         if (a.stype == 'season') {
@@ -118,16 +113,14 @@
                     }
                 };
 
-                // Сборка интерфейса КАК В ON.JS
                 scroll.body().addClass('torrent-list');
                 files.appendFiles(scroll.render());
-                files.appendHead(filter.render()); // Кнопки сверху!
+                files.appendHead(filter.render());
                 scroll.minus(files.render().find('.explorer__files-head'));
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
                 
                 Lampa.Controller.enable('content');
 
-                // Загрузка начальных данных
                 var id = object.movie.kinopoisk_id || object.movie.kp_id || object.movie.id;
                 var url = BASE_DOMAIN + '/lite/fxapi?kinopoisk_id=' + id;
                 
@@ -142,7 +135,6 @@
                 });
             };
 
-            // Парсинг начального ответа
             this.parseInitial = function(html) {
                 var seasons = this.parseHtml(html, '.videos__season', function($elem) {
                     try {
@@ -177,7 +169,6 @@
                     } catch(e) { return null; }
                 });
 
-                // Если есть сезоны - сохраняем и загружаем первый
                 if (seasons.length > 0) {
                     filter_find.season = seasons;
                     this.updateFilterMenu();
@@ -185,13 +176,11 @@
                     return;
                 }
 
-                // Если есть озвучки - сохраняем
                 if (voices.length > 0) {
                     filter_find.voice = voices;
                     this.updateFilterMenu();
                 }
 
-                // Если есть серии - отображаем
                 if (episodes.length > 0) {
                     this.displayEpisodes(episodes);
                 } else {
@@ -199,7 +188,6 @@
                 }
             };
 
-            // Загрузка контента сезона
             this.loadSeasonContent = function(url) {
                 var _this = this;
                 scroll.clear();
@@ -212,7 +200,6 @@
                 });
             };
 
-            // Загрузка контента озвучки
             this.loadVoiceContent = function(url) {
                 var _this = this;
                 scroll.clear();
@@ -225,7 +212,6 @@
                 });
             };
 
-            // Парсинг контента сезона/озвучки
             this.parseSeasonContent = function(html) {
                 var voices = this.parseHtml(html, '.videos__button', function($elem) {
                     try {
@@ -252,13 +238,11 @@
                     } catch(e) { return null; }
                 });
 
-                // Обновляем озвучки если есть
                 if (voices.length > 0) {
                     filter_find.voice = voices;
                     this.updateFilterMenu();
                 }
 
-                // Отображаем серии
                 if (episodes.length > 0) {
                     this.displayEpisodes(episodes);
                 } else {
@@ -266,7 +250,6 @@
                 }
             };
 
-            // Обновление меню фильтров (для бокового меню)
             this.updateFilterMenu = function() {
                 var select = [];
                 
@@ -304,7 +287,6 @@
                 filter.chosen('filter', []);
             };
 
-            // Отображение серий (КАК В ON.JS)
             this.displayEpisodes = function(videos) {
                 var _this = this;
                 scroll.clear();
@@ -337,7 +319,6 @@
                 Lampa.Controller.enable('content');
             };
 
-            // Воспроизведение видео
             this.playVideo = function(element) {
                 var playlist = [];
                 var streams = element.quality || { 'Авто': element.url };
@@ -360,7 +341,6 @@
                 }
             };
 
-            // Пустой экран
             this.empty = function(msg) {
                 var html = Lampa.Template.get('lampac_does_not_answer', {});
                 html.find('.online-empty__title').text(msg || 'Нет данных');
@@ -369,7 +349,6 @@
                 scroll.append(html);
             };
 
-            // Очистка изображений
             this.clearImages = function() {
                 images.forEach(function(img) {
                     img.onerror = function() {};
@@ -379,7 +358,6 @@
                 images = [];
             };
 
-            // Старт контроллера (КАК В ON.JS)
             this.start = function() {
                 Lampa.Controller.add('content', {
                     toggle: function() {
@@ -392,7 +370,7 @@
                     },
                     right: function() {
                         if (Navigator.canmove('right')) Navigator.move('right');
-                        else filter.show('Фильтр', filter); // БОКОВОЕ МЕНЮ!
+                        else filter.show('Фильтр', filter);
                     },
                     up: function() {
                         if (Navigator.canmove('up')) Navigator.move('up');
@@ -416,7 +394,6 @@
             };
 
             this.pause = function() {};
-            
             this.stop = function() {};
             
             this.destroy = function() {
@@ -427,34 +404,42 @@
             };
         }
 
-        // ========== РЕГИСТРАЦИЯ ПЛАГИНА ==========
-        var manifest = {
-            type: 'video',
-            version: '4.0',
-            name: 'ShowyPro',
-            description: 'Онлайн просмотр ShowyPro',
-            component: 'showypro',
-            onContextMenu: function(object) {
-                return {
-                    name: 'ShowyPro',
-                    description: ''
-                };
-            },
-            onContextLauch: function(object) {
-                Lampa.Component.add('showypro', component);
-                Lampa.Activity.push({
-                    url: '',
-                    title: 'ShowyPro - ' + (object.title || object.name),
-                    component: 'showypro',
-                    movie: object,
-                    page: 1
-                });
-            }
-        };
+        // ========== ДОБАВЛЕНИЕ КНОПКИ "FILMIX UHD" ==========
+        Lampa.Listener.follow('full', function(e) {
+            if (e.type == 'complite') {
+                var btn = $(
+                    '<div class="full-start__button selector view--filmix_uhd">' +
+                        '<svg width="128" height="118" viewBox="0 0 128 118" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+                            '<rect y="33" width="128" height="52" rx="5" fill="white"/>' +
+                            '<path d="M20 48H26V68H20V48Z" fill="currentColor"/>' +
+                            '<path d="M34 48H54V54H40V56H52V62H40V68H34V48Z" fill="currentColor"/>' +
+                            '<path d="M62 48H72L76 58L80 48H90V68H84V56L78 68H74L68 56V68H62V48Z" fill="currentColor"/>' +
+                            '<path d="M98 48H108V68H98V48Z" fill="currentColor"/>' +
+                            '<path d="M46 76L54 86L62 76H46Z" fill="white"/>' +
+                            '<path d="M36 90C36 87.7909 37.7909 86 40 86H88C90.2091 86 92 87.7909 92 90V108C92 110.209 90.2091 112 88 112H40C37.7909 112 36 110.209 36 108V90Z" fill="white"/>' +
+                            '<path d="M46 96V102H52V96H58V102H64V96H70V108H64V104H58V108H52V104H46V108H40V96H46Z" fill="currentColor"/>' +
+                            '<path d="M78 96H88V100H84V102H88V106H84V108H78V96Z" fill="currentColor"/>' +
+                        '</svg>' +
+                        '<span>Filmix UHD</span>' +
+                    '</div>'
+                );
 
-        Lampa.Manifest.plugins = manifest;
-        
-        console.log('ShowyPro plugin v4.0 loaded (Full screen with filter menu)');
+                btn.on('hover:enter', function() {
+                    Lampa.Component.add('showypro', component);
+                    Lampa.Activity.push({
+                        url: '',
+                        title: 'ShowyPro - ' + (e.object.title || e.object.name),
+                        component: 'showypro',
+                        movie: e.object,
+                        page: 1
+                    });
+                });
+
+                e.object.activity.render().find('.view--torrent').after(btn);
+            }
+        });
+
+        console.log('ShowyPro plugin v4.1 loaded (with Filmix UHD button)');
     }
 
     if (window.appready) startPlugin();
