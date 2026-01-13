@@ -41,17 +41,14 @@
             var current_voice = null;
             var voice_params = [];
             var similar_movies = []; // Для хранения похожих фильмов
-            var selected_movie_url = null; // URL выбранного фильма из похожих
 
             var filter_translate = { 
                 season: 'Сезон', 
-                voice: 'Озвучка',
-                movie: 'Фильм' // Добавляем фильтр для выбора фильма
+                voice: 'Озвучка'
             };
             var filter_find = { 
                 season: [], 
-                voice: [],
-                movie: [] // Для списка похожих фильмов
+                voice: []
             };
 
             this.requestWithProxy = function(url, onSuccess, onError) {
@@ -103,21 +100,7 @@
 
                 filter.onSelect = function(type, a, b) {
                     if (type == 'filter') {
-                        if (a.stype == 'movie') {
-                            // Пользователь выбрал фильм из похожих
-                            selected_movie_url = filter_find.movie[b.index].url;
-                            console.log('[ShowyPro] Selected movie URL:', selected_movie_url);
-
-                            // Загружаем выбранный фильм
-                            var url = selected_movie_url;
-                            url = sign(url);
-
-                            _this.requestWithProxy(url, function(html) {
-                                _this.parseSelectedMovie(html);
-                            }, function() {
-                                _this.empty('Ошибка загрузки фильма');
-                            });
-                        } else if (a.stype == 'season') {
+                        if (a.stype == 'season') {
                             current_season = filter_find.season[b.index].season;
                             current_voice = 0;
                             filter_find.voice = [];
@@ -203,7 +186,7 @@
                         console.log('[ShowyPro] Found', $seasons.length, 'similar movies');
 
                         similar_movies = [];
-                        filter_find.movie = [];
+                        scroll.body().empty();
 
                         $seasons.each(function(index) {
                             var $item = $(this);
@@ -212,21 +195,37 @@
                             if (dataJson) {
                                 try {
                                     var data = JSON.parse(dataJson);
-                                    var title = $item.find('.videos__season-title').text().trim();
+                                    var title = $item.find('.videos__season-title, .videos__item-title').text().trim();
+                                    var year = data.year || '';
 
-                                    similar_movies.push({
+                                    var movieData = {
                                         title: title,
                                         url: data.url || '',
-                                        year: data.year || '',
+                                        year: year,
                                         index: index
-                                    });
+                                    };
 
-                                    filter_find.movie.push({
+                                    similar_movies.push(movieData);
+
+                                    console.log('[ShowyPro] Movie:', title, 'Year:', year, 'URL:', data.url);
+
+                                    // Создаем элемент списка для каждого фильма
+                                    var episode = {
                                         title: title,
-                                        url: data.url || ''
+                                        quality: year ? year.toString() : '',
+                                        info: year ? year.toString() : '',
+                                        url: data.url
+                                    };
+
+                                    var item = Lampa.Template.get('lampac_prestige_folder', episode);
+
+                                    item.on('hover:enter', function() {
+                                        console.log('[ShowyPro] Selected movie:', title, 'URL:', data.url);
+                                        _this.loadSelectedMovie(data.url);
                                     });
 
-                                    console.log('[ShowyPro] Movie:', title, 'URL:', data.url);
+                                    scroll.append(item);
+
                                 } catch(e) {
                                     console.log('[ShowyPro] Error parsing movie data:', e);
                                 }
@@ -234,19 +233,13 @@
                         });
 
                         if (similar_movies.length > 0) {
-                            _this.updateFilterMenu();
-                            scroll.body().empty();
-
-                            // Показываем сообщение о необходимости выбора
-                            var msg = $('<div class="broadcast__text" style="padding: 20px; text-align: center;">Найдено ' + similar_movies.length + ' вариантов. Откройте фильтр и выберите нужный фильм.</div>');
-                            scroll.body().append(msg);
-
                             Lampa.Controller.enable('content');
                         } else {
                             _this.empty('Фильмы не найдены');
                         }
                     } else {
                         // Если нет videos__season, возможно сразу контент
+                        console.log('[ShowyPro] No similar movies found, parsing as direct content');
                         _this.parseInitial(html);
                     }
                 } catch(e) {
@@ -255,12 +248,21 @@
                 }
             };
 
-            this.parseSelectedMovie = function(html) {
+            this.loadSelectedMovie = function(movieUrl) {
                 var _this = this;
-                console.log('[ShowyPro] parseSelectedMovie - parsing selected movie HTML');
+                console.log('[ShowyPro] loadSelectedMovie - loading movie from URL:', movieUrl);
 
-                // После выбора фильма парсим его как обычно
-                _this.parseInitial(html);
+                var url = movieUrl;
+                url = sign(url);
+
+                scroll.body().empty();
+                scroll.body().append(Lampa.Template.get('lampac_content_loading'));
+
+                _this.requestWithProxy(url, function(html) {
+                    _this.parseInitial(html);
+                }, function() {
+                    _this.empty('Ошибка загрузки фильма');
+                });
             };
 
             this.parseInitial = function(html) {
@@ -290,14 +292,12 @@
                     if (seasons.length > 0) {
                         // Это сериал с сезонами
                         filter_find.season = seasons;
-                        filter_find.movie = []; // Очищаем список фильмов
                         current_season = 1;
                         current_voice = 0;
                         _this.updateFilterMenu();
                         _this.loadSeason(1);
                     } else {
                         // Это фильм или прямой список озвучек
-                        filter_find.movie = []; // Очищаем список фильмов
                         _this.parseContent(html);
                     }
                 } catch(e) {
@@ -397,16 +397,6 @@
 
             this.updateFilterMenu = function() {
                 var filter_items = [];
-
-                // Добавляем фильтр выбора фильма если есть похожие
-                if (filter_find.movie.length > 0) {
-                    filter_items.push({
-                        title: 'Фильм',
-                        subtitle: filter_find.movie.length + ' вариантов',
-                        items: filter_find.movie,
-                        stype: 'movie'
-                    });
-                }
 
                 // Добавляем фильтр сезонов если есть
                 if (filter_find.season.length > 0) {
@@ -615,7 +605,7 @@
             }
         });
 
-        console.log('[ShowyPro] Plugin v10.0 loaded - Added fallback to title search and similar movies selection');
+        console.log('[ShowyPro] Plugin v11.0 loaded - Fixed: similar movies as list in main window');
     }
 
     if (window.appready) startPlugin();
