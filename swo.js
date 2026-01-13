@@ -127,7 +127,18 @@
 
                 if (object.movie.kinopoisk_id || object.movie.kp_id) {
                     current_kinopoisk_id = object.movie.kinopoisk_id || object.movie.kp_id;
-                    var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
+                    var url = 'http://' + BASE_DOMAIN + '?';
+                    
+                    if (object.movie.id) {
+                        url += 'postid=' + object.movie.id + '&';
+                    }
+                    
+                    url += 'kinopoisk_id=' + current_kinopoisk_id;
+                    
+                    if (object.movie.title) {
+                        url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title));
+                    }
+                    
                     url = sign(url);
                     
                     console.log('[ShowyPro] Using kinopoisk_id:', current_kinopoisk_id);
@@ -186,7 +197,19 @@
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
                 
-                var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id + '&s=' + seasonNum;
+                var url = 'http://' + BASE_DOMAIN + '?';
+                
+                if (object.movie.id) {
+                    url += 'postid=' + object.movie.id + '&';
+                }
+                
+                url += 'kinopoisk_id=' + current_kinopoisk_id;
+                
+                if (object.movie.title) {
+                    url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title));
+                }
+                
+                url = Lampa.Utils.addUrlComponent(url, 's=' + seasonNum);
                 url = sign(url);
                 
                 console.log('[ShowyPro] Loading season:', seasonNum);
@@ -205,9 +228,22 @@
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
                 
                 // Используем параметр t из кнопки озвучки
-                var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
-                if (current_season) url += '&s=' + current_season;
-                url += '&t=' + voiceParam;
+                var url = 'http://' + BASE_DOMAIN + '?';
+                
+                if (object.movie.id) {
+                    url += 'postid=' + object.movie.id + '&';
+                }
+                
+                url += 'kinopoisk_id=' + current_kinopoisk_id;
+                
+                if (object.movie.title) {
+                    url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title));
+                }
+                
+                if (current_season) {
+                    url = Lampa.Utils.addUrlComponent(url, 's=' + current_season);
+                }
+                url = Lampa.Utils.addUrlComponent(url, 't=' + voiceParam);
                 url = sign(url);
                 
                 console.log('[ShowyPro] Loading voice with t:', voiceParam);
