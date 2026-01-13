@@ -136,7 +136,7 @@
                     url += 'kinopoisk_id=' + current_kinopoisk_id;
                     
                     if (object.movie.title) {
-                        url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title));
+                        url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
                     }
                     
                     url = sign(url);
@@ -206,7 +206,7 @@
                 url += 'kinopoisk_id=' + current_kinopoisk_id;
                 
                 if (object.movie.title) {
-                    url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title));
+                    url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
                 }
                 
                 url = Lampa.Utils.addUrlComponent(url, 's=' + seasonNum);
@@ -237,7 +237,7 @@
                 url += 'kinopoisk_id=' + current_kinopoisk_id;
                 
                 if (object.movie.title) {
-                    url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title));
+                    url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
                 }
                 
                 if (current_season) {
@@ -567,3 +567,4 @@
         });
     }
 })();
+
