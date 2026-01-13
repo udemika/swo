@@ -127,13 +127,7 @@
 
                 if (object.movie.kinopoisk_id || object.movie.kp_id) {
                     current_kinopoisk_id = object.movie.kinopoisk_id || object.movie.kp_id;
-                    var url = 'http://' + BASE_DOMAIN + '?';
-                    
-                    if (object.movie.id) {
-                        url += 'postid=' + object.movie.id + '&';
-                    }
-                    
-                    url += 'kinopoisk_id=' + current_kinopoisk_id;
+                    var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
                     
                     if (object.movie.title) {
                         url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
@@ -197,13 +191,7 @@
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
                 
-                var url = 'http://' + BASE_DOMAIN + '?';
-                
-                if (object.movie.id) {
-                    url += 'postid=' + object.movie.id + '&';
-                }
-                
-                url += 'kinopoisk_id=' + current_kinopoisk_id;
+                var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
                 
                 if (object.movie.title) {
                     url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
@@ -228,13 +216,7 @@
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
                 
                 // Используем параметр t из кнопки озвучки
-                var url = 'http://' + BASE_DOMAIN + '?';
-                
-                if (object.movie.id) {
-                    url += 'postid=' + object.movie.id + '&';
-                }
-                
-                url += 'kinopoisk_id=' + current_kinopoisk_id;
+                var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
                 
                 if (object.movie.title) {
                     url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
