@@ -151,18 +151,38 @@
             this.parseInitial = function(html) {
                 var _this = this;
                 console.log('[ShowyPro] parseInitial - parsing HTML');
-                
+
                 try {
                     var $dom = $('<div>' + html + '</div>');
-                    
+
+                    // Проверяем, это похожие фильмы или сезоны
+                    var $firstItem = $dom.find('.videos__item.videos__season').first();
+
+                    if ($firstItem.length > 0) {
+                        var dataJson = $firstItem.attr('data-json');
+                        if (dataJson) {
+                            try {
+                                var jsonData = JSON.parse(dataJson);
+                                if (jsonData.similar === true) {
+                                    console.log('[ShowyPro] Detected similar movies');
+                                    _this.parseSimilarMovies(html);
+                                    return;
+                                }
+                            } catch(e) {
+                                console.log('[ShowyPro] JSON parse error:', e);
+                            }
+                        }
+                    }
+
+                    // Обычная обработка сезонов
                     var $seasons = $dom.find('.videos__season-title');
                     var seasons = [];
-                    
+
                     $seasons.each(function() {
                         var title = $(this).text().trim();
                         var seasonMatch = title.match(/(\d+)/);
                         var seasonNum = seasonMatch ? parseInt(seasonMatch[1]) : seasons.length + 1;
-                        
+
                         seasons.push({
                             title: title,
                             season: seasonNum
@@ -184,6 +204,93 @@
                     console.log('[ShowyPro] Parse error:', e);
                     _this.empty('Ошибка парсинга');
                 }
+            };
+
+            this.parseSimilarMovies = function(html) {
+                var _this = this;
+                console.log('[ShowyPro] parseSimilarMovies');
+
+                try {
+                    var $dom = $('<div>' + html + '</div>');
+                    var $items = $dom.find('.videos__item.videos__season');
+                    var movies = [];
+
+                    $items.each(function() {
+                        var $item = $(this);
+                        var dataJson = $item.attr('data-json');
+                        var title = $item.find('.videos__season-title').text().trim();
+
+                        if (dataJson) {
+                            try {
+                                var jsonData = JSON.parse(dataJson);
+                                if (jsonData.similar === true && jsonData.url) {
+                                    movies.push({
+                                        title: title + ' (' + (jsonData.year || '') + ')',
+                                        url: jsonData.url,
+                                        year: jsonData.year || ''
+                                    });
+                                }
+                            } catch(e) {}
+                        }
+                    });
+
+                    console.log('[ShowyPro] Similar movies:', movies.length);
+
+                    if (movies.length > 0) {
+                        _this.showSimilarMoviesSelect(movies);
+                    } else {
+                        _this.empty('Похожие фильмы не найдены');
+                    }
+                } catch(e) {
+                    console.log('[ShowyPro] Parse similar error:', e);
+                    _this.empty('Ошибка парсинга');
+                }
+            };
+
+            this.showSimilarMoviesSelect = function(movies) {
+                var _this = this;
+
+                var items = movies.map(function(movie) {
+                    return {
+                        title: movie.title,
+                        url: movie.url
+                    };
+                });
+
+                Lampa.Select.show({
+                    title: 'Выберите фильм',
+                    items: items,
+                    onSelect: function(item) {
+                        console.log('[ShowyPro] Selected:', item.title);
+                        _this.loadSimilarMovie(item.url);
+                    },
+                    onBack: function() {
+                        Lampa.Activity.backward();
+                    }
+                });
+            };
+
+            this.loadSimilarMovie = function(itemUrl) {
+                var _this = this;
+                scroll.clear();
+                scroll.body().append(Lampa.Template.get('lampac_content_loading'));
+
+                var url = itemUrl + '&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN;
+
+                console.log('[ShowyPro] Loading similar:', url);
+
+                this.requestWithProxy(url, function(html) {
+                    var $dom = $('<div>' + html + '</div>');
+                    var $seasons = $dom.find('.videos__season-title');
+
+                    if ($seasons.length > 0) {
+                        _this.parseInitial(html);
+                    } else {
+                        _this.parseContent(html);
+                    }
+                }, function() {
+                    _this.empty('Ошибка загрузки');
+                });
             };
 
             this.loadSeason = function(seasonNum) {
