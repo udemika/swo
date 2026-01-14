@@ -274,17 +274,13 @@
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
 
-                // Формируем URL с правильной кодировкой
                 var url = 'http://' + BASE_DOMAIN + '?postid=' + postid;
-
-                // Используем fallback для kinopoisk_id
                 url = Lampa.Utils.addUrlComponent(url, 'kinopoisk_id=' + (current_kinopoisk_id || 0));
 
                 if (object.movie.title) {
                     url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
                 }
 
-                // ДОБАВЛЯЕМ uid и showy_token через sign()
                 url = sign(url);
 
                 console.log('[ShowyPro] Loading similar movie:', url);
@@ -310,13 +306,7 @@
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
                 
-                var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
-                
-                if (object.movie.title) {
-                    url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
-                }
-                
-                url = Lampa.Utils.addUrlComponent(url, 's=' + seasonNum);
+                var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id + '&s=' + seasonNum;
                 url = sign(url);
                 
                 console.log('[ShowyPro] Loading season:', seasonNum);
@@ -336,15 +326,8 @@
                 
                 // Используем параметр t из кнопки озвучки
                 var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
-                
-                if (object.movie.title) {
-                    url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
-                }
-                
-                if (current_season) {
-                    url = Lampa.Utils.addUrlComponent(url, 's=' + current_season);
-                }
-                url = Lampa.Utils.addUrlComponent(url, 't=' + voiceParam);
+                if (current_season) url += '&s=' + current_season;
+                url += '&t=' + voiceParam;
                 url = sign(url);
                 
                 console.log('[ShowyPro] Loading voice with t:', voiceParam);
@@ -668,4 +651,3 @@
         });
     }
 })();
-
