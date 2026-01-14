@@ -224,7 +224,6 @@
                             try {
                                 var jsonData = JSON.parse(dataJson);
                                 if (jsonData.similar === true && jsonData.url) {
-                                    // Извлекаем postid из URL
                                     var postidMatch = jsonData.url.match(/postid=(\d+)/);
                                     var postid = postidMatch ? postidMatch[1] : null;
 
@@ -241,7 +240,7 @@
                     console.log('[ShowyPro] Similar movies:', movies.length);
 
                     if (movies.length > 0) {
-                        _this.showSimilarMoviesWindow(movies);
+                        _this.showSimilarMoviesList(movies);
                     } else {
                         _this.empty('Похожие фильмы не найдены');
                     }
@@ -251,27 +250,27 @@
                 }
             };
 
-            this.showSimilarMoviesWindow = function(movies) {
+            this.showSimilarMoviesList = function(movies) {
                 var _this = this;
-                console.log('[ShowyPro] showSimilarMoviesWindow');
+                console.log('[ShowyPro] showSimilarMoviesList');
 
-                var items = movies.map(function(movie) {
-                    return {
-                        title: movie.title,
-                        postid: movie.postid
-                    };
+                scroll.clear();
+
+                movies.forEach(function(movie) {
+                    var $item = Lampa.Template.get('lampac_prestige_folder', {
+                        title: movie.title
+                    });
+
+                    $item.on('hover:enter', function() {
+                        console.log('[ShowyPro] Selected:', movie.title, 'postid:', movie.postid);
+                        _this.loadSimilarMovie(movie.postid);
+                    });
+
+                    scroll.append($item);
                 });
 
-                Lampa.Select.show({
-                    title: 'Выберите фильм',
-                    items: items,
-                    onSelect: function(item) {
-                        console.log('[ShowyPro] Selected:', item.title, 'postid:', item.postid);
-                        _this.loadSimilarMovie(item.postid);
-                    },
-                    onBack: function() {
-                        Lampa.Activity.backward();
-                    }
+                scroll.render().find('.selector').on('hover:focus', function() {
+                    last_select_item = $(this)[0];
                 });
             };
 
@@ -280,17 +279,16 @@
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
 
-                // Формируем НОВЫЙ URL с правильной кодировкой
-                // Вариант 1: postid + kinopoisk_id + title
+                // Формируем URL с правильной кодировкой
                 var url = 'http://' + BASE_DOMAIN + '?postid=' + postid;
-
-                // Добавляем kinopoisk_id
                 url = Lampa.Utils.addUrlComponent(url, 'kinopoisk_id=' + current_kinopoisk_id);
 
-                // Добавляем title с правильной кодировкой (ВЕРХНИЙ регистр)
                 if (object.movie.title) {
                     url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
                 }
+
+                // ДОБАВЛЯЕМ uid и showy_token через sign()
+                url = sign(url);
 
                 console.log('[ShowyPro] Loading similar movie:', url);
 
