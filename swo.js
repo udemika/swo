@@ -237,7 +237,7 @@
                     console.log('[ShowyPro] Similar movies:', movies.length);
 
                     if (movies.length > 0) {
-                        _this.showSimilarMoviesSelect(movies);
+                        _this.showSimilarMoviesModal(movies);
                     } else {
                         _this.empty('Похожие фильмы не найдены');
                     }
@@ -247,27 +247,49 @@
                 }
             };
 
-            this.showSimilarMoviesSelect = function(movies) {
+            this.showSimilarMoviesModal = function(movies) {
                 var _this = this;
+                console.log('[ShowyPro] showSimilarMoviesModal');
 
-                var items = movies.map(function(movie) {
-                    return {
-                        title: movie.title,
-                        url: movie.url
-                    };
+                var $list = $('<div class="selectbox-list">');
+
+                movies.forEach(function(movie) {
+                    var $item = $('<div class="selectbox-item selector">');
+                    $item.text(movie.title);
+                    $item.data('url', movie.url);
+
+                    $item.on('hover:enter', function() {
+                        Lampa.Modal.close();
+                        console.log('[ShowyPro] Selected:', movie.title);
+                        _this.loadSimilarMovie(movie.url);
+                    });
+
+                    $list.append($item);
                 });
 
-                Lampa.Select.show({
+                Lampa.Modal.open({
                     title: 'Выберите фильм',
-                    items: items,
-                    onSelect: function(item) {
-                        console.log('[ShowyPro] Selected:', item.title);
-                        _this.loadSimilarMovie(item.url);
-                    },
+                    html: $list,
+                    size: 'medium',
+                    mask: true,
                     onBack: function() {
+                        Lampa.Modal.close();
                         Lampa.Activity.backward();
                     }
                 });
+
+                Lampa.Controller.add('modal', {
+                    toggle: function() {
+                        Lampa.Controller.collectionSet($list.find('.selector'));
+                        Lampa.Controller.collectionFocus(false, $list);
+                    },
+                    back: function() {
+                        Lampa.Modal.close();
+                        Lampa.Controller.toggle('content');
+                    }
+                });
+
+                Lampa.Controller.toggle('modal');
             };
 
             this.loadSimilarMovie = function(itemUrl) {
@@ -275,21 +297,32 @@
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
 
-                var url = itemUrl + '&uid=' + WORKING_UID + '&showy_token=' + WORKING_TOKEN;
+                // ВАЖНО: сохраняем оригинальную кодировку URL из data-json
+                var url = itemUrl;
 
-                console.log('[ShowyPro] Loading similar:', url);
+                // Добавляем параметры только если их нет
+                if (url.indexOf('uid=') === -1) {
+                    url += '&uid=' + WORKING_UID;
+                }
+                if (url.indexOf('showy_token=') === -1) {
+                    url += '&showy_token=' + WORKING_TOKEN;
+                }
+
+                console.log('[ShowyPro] Loading similar movie:', url);
 
                 this.requestWithProxy(url, function(html) {
                     var $dom = $('<div>' + html + '</div>');
                     var $seasons = $dom.find('.videos__season-title');
 
                     if ($seasons.length > 0) {
+                        console.log('[ShowyPro] Similar movie has seasons');
                         _this.parseInitial(html);
                     } else {
+                        console.log('[ShowyPro] Similar movie - direct content');
                         _this.parseContent(html);
                     }
                 }, function() {
-                    _this.empty('Ошибка загрузки');
+                    _this.empty('Ошибка загрузки фильма');
                 });
             };
 
