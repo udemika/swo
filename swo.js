@@ -128,6 +128,11 @@
                 if (object.movie.kinopoisk_id || object.movie.kp_id) {
                     current_kinopoisk_id = object.movie.kinopoisk_id || object.movie.kp_id;
                     var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
+
+            if (object.movie.title) {
+                url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
+            }
+
                     url = sign(url);
                     
                     console.log('[ShowyPro] Using kinopoisk_id:', current_kinopoisk_id);
