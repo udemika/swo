@@ -128,6 +128,11 @@
                 if (object.movie.kinopoisk_id || object.movie.kp_id) {
                     current_kinopoisk_id = object.movie.kinopoisk_id || object.movie.kp_id;
                     var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
+                    
+                    if (object.movie.title) {
+                        url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
+                    }
+                    
                     url = sign(url);
                     
                     console.log('[ShowyPro] Using kinopoisk_id:', current_kinopoisk_id);
@@ -146,18 +151,38 @@
             this.parseInitial = function(html) {
                 var _this = this;
                 console.log('[ShowyPro] parseInitial - parsing HTML');
-                
+
                 try {
                     var $dom = $('<div>' + html + '</div>');
-                    
+
+                    // Проверяем, это похожие фильмы или сезоны
+                    var $firstItem = $dom.find('.videos__item.videos__season').first();
+
+                    if ($firstItem.length > 0) {
+                        var dataJson = $firstItem.attr('data-json');
+                        if (dataJson) {
+                            try {
+                                var jsonData = JSON.parse(dataJson);
+                                if (jsonData.similar === true) {
+                                    console.log('[ShowyPro] Detected similar movies');
+                                    _this.parseSimilarMovies(html);
+                                    return;
+                                }
+                            } catch(e) {
+                                console.log('[ShowyPro] JSON parse error:', e);
+                            }
+                        }
+                    }
+
+                    // Обычная обработка сезонов
                     var $seasons = $dom.find('.videos__season-title');
                     var seasons = [];
-                    
+
                     $seasons.each(function() {
                         var title = $(this).text().trim();
                         var seasonMatch = title.match(/(\d+)/);
                         var seasonNum = seasonMatch ? parseInt(seasonMatch[1]) : seasons.length + 1;
-                        
+
                         seasons.push({
                             title: title,
                             season: seasonNum
@@ -181,12 +206,120 @@
                 }
             };
 
+            this.parseSimilarMovies = function(html) {
+                var _this = this;
+                console.log('[ShowyPro] parseSimilarMovies');
+
+                try {
+                    var $dom = $('<div>' + html + '</div>');
+                    var $items = $dom.find('.videos__item.videos__season');
+                    var movies = [];
+
+                    $items.each(function() {
+                        var $item = $(this);
+                        var dataJson = $item.attr('data-json');
+                        var title = $item.find('.videos__season-title').text().trim();
+
+                        if (dataJson) {
+                            try {
+                                var jsonData = JSON.parse(dataJson);
+                                if (jsonData.similar === true && jsonData.url) {
+                                    var postidMatch = jsonData.url.match(/postid=(\d+)/);
+                                    var postid = postidMatch ? postidMatch[1] : null;
+
+                                    movies.push({
+                                        title: title + ' (' + (jsonData.year || '') + ')',
+                                        postid: postid,
+                                        year: jsonData.year || ''
+                                    });
+                                }
+                            } catch(e) {}
+                        }
+                    });
+
+                    console.log('[ShowyPro] Similar movies:', movies.length);
+
+                    if (movies.length > 0) {
+                        _this.showSimilarMoviesList(movies);
+                    } else {
+                        _this.empty('Похожие фильмы не найдены');
+                    }
+                } catch(e) {
+                    console.log('[ShowyPro] Parse similar error:', e);
+                    _this.empty('Ошибка парсинга');
+                }
+            };
+
+            this.showSimilarMoviesList = function(movies) {
+                var _this = this;
+                console.log('[ShowyPro] showSimilarMoviesList');
+
+                scroll.clear();
+
+                movies.forEach(function(movie) {
+                    var $item = Lampa.Template.get('lampac_prestige_folder', {
+                        title: movie.title
+                    });
+
+                    $item.on('hover:enter', function() {
+                        console.log('[ShowyPro] Selected:', movie.title, 'postid:', movie.postid);
+                        _this.loadSimilarMovie(movie.postid);
+                    });
+
+                    scroll.append($item);
+                });
+
+                scroll.render().find('.selector').on('hover:focus', function() {
+                    last_select_item = $(this)[0];
+                });
+            };
+
+            this.loadSimilarMovie = function(postid) {
+                var _this = this;
+                scroll.clear();
+                scroll.body().append(Lampa.Template.get('lampac_content_loading'));
+
+                // Формируем URL с правильной кодировкой
+                var url = 'http://' + BASE_DOMAIN + '?postid=' + postid;
+                url = Lampa.Utils.addUrlComponent(url, 'kinopoisk_id=' + current_kinopoisk_id);
+
+                if (object.movie.title) {
+                    url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
+                }
+
+                // ДОБАВЛЯЕМ uid и showy_token через sign()
+                url = sign(url);
+
+                console.log('[ShowyPro] Loading similar movie:', url);
+
+                this.requestWithProxy(url, function(html) {
+                    var $dom = $('<div>' + html + '</div>');
+                    var $seasons = $dom.find('.videos__season-title');
+
+                    if ($seasons.length > 0) {
+                        console.log('[ShowyPro] Similar movie has seasons');
+                        _this.parseInitial(html);
+                    } else {
+                        console.log('[ShowyPro] Similar movie - direct content');
+                        _this.parseContent(html);
+                    }
+                }, function() {
+                    _this.empty('Ошибка загрузки фильма');
+                });
+            };
+
             this.loadSeason = function(seasonNum) {
                 var _this = this;
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
                 
-                var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id + '&s=' + seasonNum;
+                var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
+                
+                if (object.movie.title) {
+                    url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
+                }
+                
+                url = Lampa.Utils.addUrlComponent(url, 's=' + seasonNum);
                 url = sign(url);
                 
                 console.log('[ShowyPro] Loading season:', seasonNum);
@@ -206,8 +339,15 @@
                 
                 // Используем параметр t из кнопки озвучки
                 var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
-                if (current_season) url += '&s=' + current_season;
-                url += '&t=' + voiceParam;
+                
+                if (object.movie.title) {
+                    url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
+                }
+                
+                if (current_season) {
+                    url = Lampa.Utils.addUrlComponent(url, 's=' + current_season);
+                }
+                url = Lampa.Utils.addUrlComponent(url, 't=' + voiceParam);
                 url = sign(url);
                 
                 console.log('[ShowyPro] Loading voice with t:', voiceParam);
@@ -531,3 +671,4 @@
         });
     }
 })();
+
