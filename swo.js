@@ -125,9 +125,8 @@
                 
                 Lampa.Controller.enable('content');
 
-                // Получаем kinopoisk_id или используем 0
-            //if (object.movie.kinopoisk_id || object.movie.kp_id) {
-                    current_kinopoisk_id = object.movie.kinopoisk_id || object.movie.kp_id || 0;
+                if (object.movie.kinopoisk_id || object.movie.kp_id) {
+                    current_kinopoisk_id = object.movie.kinopoisk_id || object.movie.kp_id;
                     var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
                     url = sign(url);
                     
@@ -139,6 +138,9 @@
                     }, function() {
                         _this.empty('Ошибка загрузки');
                     });
+                } else {
+                    _this.empty('Kinopoisk ID не найден');
+                }
             };
 
             this.parseInitial = function(html) {
@@ -529,4 +531,3 @@
         });
     }
 })();
-
