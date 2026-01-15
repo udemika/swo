@@ -6,6 +6,8 @@
         if (window.showypro_plugin_loaded) return;
         window.showypro_plugin_loaded = true;
 
+        console.log('[ShowyPro] v11.0 loading...');
+
         var WORKING_UID = 'i8nqb9vw';
         var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
         var BASE_DOMAIN = 'showypro.com/lite/fxapi';
@@ -19,7 +21,6 @@
             'https://cors557.deno.dev/'
         ];
 
-        var currentProxyIdx = 0;
         var Network = Lampa.Request || Lampa.Reguest;
 
         function sign(url) {
@@ -28,115 +29,115 @@
             return url;
         }
 
-        function component(object) {
-            var html = $('<div></div>');
-            var scroll = new Lampa.Scroll({mask: true, over: true});
+        Lampa.Listener.follow('full', function(e) {
+            if (e.type == 'complite') {
+                var btn = $('<div class="full-start__button selector" style="margin-left:1rem;"><div style="font-size:1.2em;padding:1rem;">ShowyPro</div></div>');
+                btn.on('hover:enter', function() {
+                    Lampa.Component.add('showypro', showypro_component);
+                    Lampa.Activity.push({
+                        url: '',
+                        title: 'ShowyPro',
+                        component: 'showypro',
+                        movie: e.data.movie,
+                        page: 1
+                    });
+                });
+                e.object.activity.render().find('.view--torrent').after(btn);
+                console.log('[ShowyPro] Button OK');
+            }
+        });
+
+        var showypro_component = function(object) {
             var network = new Network();
-            var filter = new Lampa.Filter(object);
+            var scroll = new Lampa.Scroll({mask: true, over: true});
+            var html = $('<div></div>');
             var last;
 
             var current_kinopoisk_id = null;
-            var current_season = 1;
-            var current_voice = 0;
-            var attempts = 0;
-
-            filter.onSearch = function(){};
-            filter.onBack = function(){};
-            filter.render().find('.selector').on('hover:focus', function(e){ last = e.target; });
-
-            html.append(filter.render());
-            html.append(scroll.render());
 
             this.create = function() {
                 console.log('[ShowyPro] create()');
+                html.append(scroll.render());
+                scroll.append('<div style="padding:2rem;text-align:center;color:#999">Загрузка...</div>');
                 Lampa.Controller.add('content', {
                     toggle: function() { 
                         Lampa.Controller.collectionSet(scroll.render());
-                        Lampa.Controller.collectionFocus(last || false, scroll.render());
+                        Lampa.Controller.collectionFocus(last, scroll.render());
                     },
+                    right: function() { Lampa.Controller.toggle('menu'); },
+                    left: function() { if (Navigator.canmove('left')) Navigator.move('left'); else Lampa.Controller.toggle('menu'); },
                     back: this.back
                 });
-                this.initialize();
-                Lampa.Controller.toggle('content');
-                return this.render();
+                this.activityLoader();
+                return html;
             };
 
-            this.initialize = function() {
-                console.log('[ShowyPro] Initialize');
-                console.log('[ShowyPro] Movie:', object.movie);
+            this.start = function() {
+                console.log('[ShowyPro] start()');
+                Lampa.Controller.toggle('content');
+            };
 
+            this.activityLoader = function() {
                 if (object.movie.kinopoisk_id || object.movie.kp_id) {
                     current_kinopoisk_id = object.movie.kinopoisk_id || object.movie.kp_id;
                     var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
                     if (object.movie.title) url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title));
                     url = sign(url);
 
-                    console.log('[ShowyPro] Request:', url);
-                    this.requestWithProxy(url, this.parse.bind(this));
+                    console.log('[ShowyPro] URL:', url);
+                    this.requestProxy(url);
                 } else {
-                    this.empty('Нет Kinopoisk ID');
+                    scroll.clear().append('<div style="padding:4rem;text-align:center;color:#999;font-size:1.2em">Нет Kinopoisk ID</div>');
                 }
             };
 
-            this.requestWithProxy = function(url, success, error) {
-                var proxy = PROXIES[currentProxyIdx];
+            this.requestProxy = function(url, success, error) {
+                var proxy = PROXIES[0]; // Только первый рабочий
                 var fullUrl = proxy + url;
 
-                console.log('[ShowyPro] Proxy[' + currentProxyIdx + ']:', fullUrl);
+                console.log('[ShowyPro] Fetch:', fullUrl);
 
-                network.timeout(5000);
-                network.silent(fullUrl, function(html) {
-                    console.log('[ShowyPro] Response length:', html.length);
-                    if (html.length > 100) {
-                        success(html);
+                network.native(fullUrl, (html) => {
+                    console.log('[ShowyPro] HTML length:', html.length);
+                    if (html.length > 500) {
+                        this.parseHTML(html);
                     } else {
-                        this.nextProxy(error);
+                        this.empty('Пустой ответ сервера');
                     }
-                }.bind(this), function() {
-                    this.nextProxy(error);
-                }.bind(this));
+                }, () => {
+                    this.empty('Ошибка сети');
+                }, false, {dataType: 'text'});
             };
 
-            this.nextProxy = function(error) {
-                attempts++;
-                currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
-                if (attempts < PROXIES.length) {
-                    console.log('[ShowyPro] Next proxy, attempt:', attempts);
-                    this.initialize();
-                } else {
-                    attempts = 0;
-                    error ? error() : this.empty('Все прокси не работают');
-                }
-            };
-
-            this.parse = function(html) {
-                console.log('[ShowyPro] parse - HTML length:', html.length);
+            this.parseHTML = function(html) {
+                console.log('[ShowyPro] Parsing...');
                 try {
                     var $dom = $('<div>').html(html);
 
                     // Похожие фильмы
-                    var similar = $dom.find('.videos__item.videos__season[data-json*="similar"]').first();
-                    if (similar.length) {
-                        console.log('[ShowyPro] Similar movies detected');
-                        this.showSimilar($dom.find('.videos__item.videos__season'));
+                    var similarItems = $dom.find('.videos__item.videos__season');
+                    if (similarItems.length) {
+                        console.log('[ShowyPro] Similar movies:', similarItems.length);
+                        this.showList(similarItems, 'Похожие фильмы', (item) => {
+                            var data = item.attr('data-json');
+                            try {
+                                var json = JSON.parse(data);
+                                if (json.url) {
+                                    var postid = json.url.match(/postid=(\d+)/);
+                                    if (postid) this.loadContent('postid=' + postid[1]);
+                                }
+                            } catch(e) {}
+                        });
                         return;
                     }
 
-                    // Сезоны
-                    var seasons = [];
-                    $dom.find('.videos__season-title').each(function() {
-                        var title = $(this).text().trim();
-                        var num = title.match(/(\d+)/)?.[1] || seasons.length + 1;
-                        seasons.push({title: title, num: parseInt(num)});
-                    });
-
-                    console.log('[ShowyPro] Seasons:', seasons.length);
-
-                    if (seasons.length) {
-                        filter_find.season = seasons;
-                        this.showSeasons(seasons);
+                    // Эпизоды
+                    var episodes = $dom.find('.videos__item.videos__movie');
+                    console.log('[ShowyPro] Episodes:', episodes.length);
+                    if (episodes.length) {
+                        this.showEpisodes(episodes);
                     } else {
-                        this.parseContent(html);
+                        this.empty('Контент не найден');
                     }
                 } catch(e) {
                     console.log('[ShowyPro] Parse error:', e);
@@ -144,138 +145,59 @@
                 }
             };
 
-            this.showSimilar = function(items) {
+            this.showList = function(items, title, onclick) {
+                scroll.clear();
+                if (items.length) {
+                    items.each((i, el) => {
+                        var $item = $(el);
+                        var text = $item.find('.videos__season-title,.videos__item-title').first().text().trim();
+                        var card = $(`<div class="selector" style="padding:1.2rem;border-bottom:1px solid #444"><div style="font-size:1.3em;color:white">${text}</div></div>`);
+                        card.on('hover:enter', () => onclick($item));
+                        card.on('hover:focus', (e) => last = e.target);
+                        scroll.append(card);
+                    });
+                } else {
+                    scroll.append(`<div style="padding:3rem;text-align:center;color:#999">${title} не найдены</div>`);
+                }
+            };
+
+            this.showEpisodes = function(items) {
                 scroll.clear();
                 items.each((i, el) => {
                     var $item = $(el);
-                    var title = $item.find('.videos__season-title').text().trim();
+                    var title = $item.find('.videos__item-title').text().trim();
                     var data = $item.attr('data-json');
 
-                    var card = $(`
-                        <div class="selector" style="padding: 1rem; border-bottom: 1px solid #444; cursor: pointer;">
-                            <div style="font-size: 1.3em; color: white;">${title}</div>
-                        </div>
-                    `);
+                    var card = $(`<div class="selector" style="padding:1.2rem;border-bottom:1px solid #444"><div style="font-size:1.3em;color:white">${title}</div></div>`);
 
                     card.on('hover:enter', () => {
                         try {
                             var json = JSON.parse(data);
                             if (json.url) {
-                                var postid = json.url.match(/postid=(\d+)/)?.[1];
-                                if (postid) this.loadPost(postid);
+                                Lampa.Player.play(json.url);
+                            } else if (json.quality) {
+                                var q = Object.keys(json.quality)[0];
+                                Lampa.Player.play(json.quality[q]);
                             }
                         } catch(e) {
-                            console.log('[ShowyPro] Similar parse error:', e);
+                            Lampa.Noty.show('Ошибка воспроизведения');
                         }
                     });
 
+                    card.on('hover:focus', (e) => last = e.target);
                     scroll.append(card);
                 });
             };
 
-            this.showSeasons = function(seasons) {
-                scroll.clear();
-
-                seasons.forEach((season, i) => {
-                    var card = $(`
-                        <div class="selector" style="padding: 1rem; border-bottom: 1px solid #444;">
-                            <div style="font-size: 1.3em; color: white;">${season.title}</div>
-                        </div>
-                    `);
-
-                    card.on('hover:enter', () => this.loadSeason(season.num));
-                    scroll.append(card);
-                });
-            };
-
-            this.loadSeason = function(num) {
-                scroll.clear().append('<div style="padding: 2rem; text-align: center; color: #999;">Загрузка...</div>');
-                var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id + '&s=' + num;
+            this.loadContent = function(params) {
+                scroll.clear().append('<div style="padding:2rem;text-align:center;color:#999">Загрузка...</div>');
+                var url = 'http://' + BASE_DOMAIN + '?' + params + '&kinopoisk_id=' + current_kinopoisk_id;
                 url = sign(url);
-                this.requestWithProxy(url, html => this.parseContent(html));
-            };
-
-            this.loadPost = function(postid) {
-                scroll.clear().append('<div style="padding: 2rem; text-align: center; color: #999;">Загрузка...</div>');
-                var url = 'http://' + BASE_DOMAIN + '?postid=' + postid;
-                url = Lampa.Utils.addUrlComponent(url, 'kinopoisk_id=' + current_kinopoisk_id);
-                url = sign(url);
-                this.requestWithProxy(url, this.parse.bind(this));
-            };
-
-            this.parseContent = function(html) {
-                console.log('[ShowyPro] parseContent');
-                try {
-                    var $dom = $('<div>').html(html);
-                    var episodes = [];
-
-                    $dom.find('.videos__item.videos__movie').each((i, el) => {
-                        var $item = $(el);
-                        var data = $item.attr('data-json');
-                        var title = $item.find('.videos__item-title').text().trim();
-
-                        try {
-                            var json = JSON.parse(data);
-                            if (json.url) {
-                                episodes.push({
-                                    title: title,
-                                    url: json.url,
-                                    quality: json.quality || {}
-                                });
-                            }
-                        } catch(e) {}
-                    });
-
-                    console.log('[ShowyPro] Episodes:', episodes.length);
-                    this.showEpisodes(episodes);
-                } catch(e) {
-                    console.log('[ShowyPro] Content parse error:', e);
-                    this.empty('Нет серий');
-                }
-            };
-
-            this.showEpisodes = function(episodes) {
-                scroll.clear();
-
-                episodes.forEach(episode => {
-                    var qualities = Object.keys(episode.quality);
-                    var qtext = qualities.join(', ') || 'HD';
-
-                    var card = $(`
-                        <div class="selector" style="padding: 1rem; border-bottom: 1px solid #444;">
-                            <div style="font-size: 1.3em; color: white;">${episode.title}</div>
-                            <div style="color: #999; font-size: 0.9em;">${qtext}</div>
-                        </div>
-                    `);
-
-                    card.on('hover:enter', () => this.play(episode));
-                    scroll.append(card);
-                });
-            };
-
-            this.play = function(episode) {
-                var urls = [];
-                for (var q in episode.quality) {
-                    urls.push({
-                        title: episode.title + ' [' + q + ']',
-                        url: episode.quality[q]
-                    });
-                }
-
-                if (!urls.length && episode.url) {
-                    urls.push({title: episode.title, url: episode.url});
-                }
-
-                if (urls.length) {
-                    Lampa.Player.play(urls[0]);
-                    if (urls.length > 1) Lampa.Player.playlist(urls);
-                } else {
-                    Lampa.Noty.show('Нет ссылок');
-                }
+                this.requestProxy(url);
             };
 
             this.empty = function(msg) {
-                scroll.clear().append('<div style="padding: 4rem; text-align: center; color: #999; font-size: 1.2em;">' + msg + '</div>');
+                scroll.clear().append('<div style="padding:4rem;text-align:center;color:#999;font-size:1.2em">' + msg + '</div>');
             };
 
             this.render = function() {
@@ -285,34 +207,15 @@
             this.back = function() {
                 Lampa.Activity.backward();
             };
-        }
+        };
 
-        Lampa.Listener.follow('full', function(e) {
-            if (e.type == 'complite') {
-                var btn = $(`
-                    <div class="full-start__button selector" style="margin-left: 1rem;">
-                        <div style="font-size: 1.2em; padding: 1rem;">ShowyPro</div>
-                    </div>
-                `);
-
-                btn.on('hover:enter', function() {
-                    Lampa.Component.add('showypro', component);
-                    Lampa.Activity.push({
-                        url: '',
-                        title: 'ShowyPro',
-                        component: 'showypro',
-                        movie: e.data.movie
-                    });
-                });
-
-                e.object.activity.render().find('.view--torrent').after(btn);
-                console.log('[ShowyPro] Button added');
-            }
-        });
-
-        console.log('[ShowyPro] v10.2 loaded - OLD Lampac compatible');
+        console.log('[ShowyPro] v11.0 ready');
     }
 
     if (window.appready) startPlugin();
-    else Lampa.Listener.follow('app', function(e) { if (e.type == 'ready') startPlugin(); });
+    else {
+        Lampa.Listener.follow('app', function(e) {
+            if (e.type == 'ready') startPlugin();
+        });
+    }
 })();
