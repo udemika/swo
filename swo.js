@@ -254,26 +254,41 @@
                 var _this = this;
                 console.log('[ShowyPro] showSimilarMoviesList');
 
-                var items = [];
+                scroll.clear();
+
                 movies.forEach(function(movie){
-                    items.push({
+                    var element = {
                         title: movie.title,
-                        subtitle: movie.year ? String(movie.year) : '',
-                        movie: movie
+                        year: movie.year,
+                        postid: movie.postid
+                    };
+
+                    // Удаляем год из заголовка, если он там есть в скобках (как мы делали при парсинге)
+                    var displayTitle = element.title.replace(/\s*\(\d{4}\)\s*$/, '');
+
+                    var html = Lampa.Template.get('lampac_prestige_folder', {
+                        title: displayTitle
                     });
+
+                    // Добавляем год в поле времени (справа)
+                    if(element.year) {
+                        html.find('.online-prestige__time').text(element.year);
+                    }
+
+                    html.on('hover:enter', function() {
+                        console.log('[ShowyPro] Selected:', element.title, 'postid:', element.postid);
+                        _this.loadSimilarMovie(element.postid);
+                    });
+
+                    html.on('hover:focus', function(e) {
+                        last = e.target;
+                        scroll.update(e.target, true);
+                    });
+
+                    scroll.append(html);
                 });
 
-                Lampa.Select.show({
-                    title: 'Выберите вариант',
-                    items: items,
-                    onSelect: function(a) {
-                        console.log('[ShowyPro] Selected:', a.movie.title, 'postid:', a.movie.postid);
-                        _this.loadSimilarMovie(a.movie.postid);
-                    },
-                    onBack: function() {
-                        Lampa.Activity.backward();
-                    }
-                });
+                Lampa.Controller.enable('content');
             };
 
             this.loadSimilarMovie = function(postid) {
