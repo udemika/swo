@@ -21,12 +21,6 @@
 
         var currentProxyIdx = 0;
 
-        function sign(url) {
-            if (url.indexOf('uid=') == -1) url = Lampa.Utils.addUrlComponent(url, 'uid=' + WORKING_UID);
-            if (url.indexOf('showy_token=') == -1) url = Lampa.Utils.addUrlComponent(url, 'showy_token=' + WORKING_TOKEN);
-            return url;
-        }
-
         var Network = Lampa.Request || Lampa.Reguest;
 
         function component(object) {
@@ -42,7 +36,7 @@
             var current_kinopoisk_id = null;
             var current_season = null;
             var current_voice = null;
-            var voice_params = []; // Массив параметров t для озвучек
+            var voice_params = [];
 
             var filter_translate = {
                 season: 'Сезон',
@@ -116,7 +110,6 @@
                             current_voice = b.index;
                             console.log('[ShowyPro] Voice selected index:', current_voice, 'param t:', voice_params[current_voice]);
 
-                            // Делаем новый запрос с выбранной озвучкой используя параметр t
                             _this.loadVoice(voice_params[current_voice]);
                         }
 
@@ -156,6 +149,12 @@
                 }
             };
 
+            function sign(url) {
+                if (url.indexOf('uid=') == -1) url = Lampa.Utils.addUrlComponent(url, 'uid=' + WORKING_UID);
+                if (url.indexOf('showy_token=') == -1) url = Lampa.Utils.addUrlComponent(url, 'showy_token=' + WORKING_TOKEN);
+                return url;
+            }
+
             this.parseInitial = function(html) {
                 var _this = this;
                 console.log('[ShowyPro] parseInitial - parsing HTML');
@@ -163,7 +162,6 @@
                 try {
                     var $dom = $('<div>' + html + '</div>');
 
-                    // Проверяем первый элемент на наличие флага similar
                     var firstItem = $dom.find('.videos__item.videos__season').first();
                     if (firstItem.length > 0) {
                         var dataJson = firstItem.attr('data-json');
@@ -181,7 +179,6 @@
                         }
                     }
 
-                    // Обычная логика для сезонов
                     var seasons = [];
                     var $seasons = $dom.find('.videos__season-title');
 
@@ -269,9 +266,13 @@
                 scroll.clear();
 
                 movies.forEach(function(movie) {
-                    // ✅ ИСПРАВЛЕНО: folder → episode (пульт Google TV работает)
-                    var item = Lampa.Template.get('lampac_prestige_episode', { title: movie.title });
+                    // ✅ ФИКС GOOGLE TV: стандартный шаблон вместо lampac_prestige_episode
+                    var item = Lampa.Template.get('full-start__button', { 
+                        title: movie.title,
+                        icon: 'folder'
+                    });
 
+                    item.find('.full-start__title').text(movie.title);
                     item.on('hover:enter', function() {
                         console.log('[ShowyPro] Selected:', movie.title, 'postid:', movie.postid);
                         _this.loadSimilarMovie(movie.postid);
@@ -291,7 +292,6 @@
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
 
-                // URL с postid
                 var url = 'http://' + BASE_DOMAIN + '?postid=' + postid;
                 url = Lampa.Utils.addUrlComponent(url, 'kinopoisk_id=' + current_kinopoisk_id);
 
@@ -299,7 +299,6 @@
                     url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
                 }
 
-                // uid и showy_token добавятся через sign
                 url = sign(url);
 
                 console.log('[ShowyPro] Loading similar movie:', url);
@@ -351,7 +350,6 @@
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
 
-                // Используем параметр t для озвучки
                 var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
 
                 if (object.movie.title) {
@@ -369,7 +367,7 @@
                 console.log('[ShowyPro] Request URL:', url);
 
                 _this.requestWithProxy(url, function(html) {
-                    _this.parseContent(html, true); // true = не перезаписывать список озвучек
+                    _this.parseContent(html, true);
                 }, function() {
                     _this.empty('Ошибка загрузки');
                 });
@@ -382,7 +380,6 @@
                 try {
                     var $dom = $('<div>' + html + '</div>');
 
-                    // Парсим озвучки (если не keepVoices)
                     if (!keepVoices) {
                         var voiceButtons = $dom.find('.videos__button');
                         var voices = [];
@@ -398,7 +395,6 @@
                                     var jsonData = JSON.parse(dataJson);
                                     var url = jsonData.url;
 
-                                    // Извлекаем параметр t из URL
                                     var tMatch = url.match(/[?&]t=(\d+)/);
                                     var tParam = tMatch ? parseInt(tMatch[1]) : voices.length;
 
@@ -421,7 +417,6 @@
                         }
                     }
 
-                    // Парсим эпизоды
                     var episodes = [];
                     var $episodes = $dom.find('.videos__item.videos__movie');
 
@@ -691,7 +686,7 @@
             }
         });
 
-        console.log('[ShowyPro] Plugin v9.0 loaded - Fixed voice parameter t instead of p');
+        console.log('[ShowyPro] Plugin v10.0 loaded - Google TV FIXED');
     }
 
     if (window.appready) startPlugin();
