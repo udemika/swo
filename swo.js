@@ -228,9 +228,10 @@
                                     var postid = postidMatch ? postidMatch[1] : null;
 
                                     movies.push({
-                                        title: title + ' (' + (jsonData.year || '') + ')',
+                                        title: title,
                                         postid: postid,
-                                        year: jsonData.year || ''
+                                        year: jsonData.year || '',
+                                        img: jsonData.img || jsonData.image || ''
                                     });
                                 }
                             } catch(e) {}
@@ -257,35 +258,33 @@
                 scroll.clear();
 
                 movies.forEach(function(movie){
-                    var element = {
-                        title: movie.title,
-                        year: movie.year,
-                        postid: movie.postid
-                    };
-
-                    // Удаляем год из заголовка, если он там есть в скобках (как мы делали при парсинге)
-                    var displayTitle = element.title.replace(/\s*\(\d{4}\)\s*$/, '');
-
-                    var html = Lampa.Template.get('lampac_prestige_folder', {
-                        title: displayTitle
+                    var item = Lampa.Template.get('lampac_prestige_folder', {
+                        title: movie.title
                     });
 
-                    // Добавляем год в поле времени (справа)
-                    if(element.year) {
-                        html.find('.online-prestige__time').text(element.year);
+                    // Добавляем год
+                    if(movie.year) {
+                        var info = $('<div class="online-prestige-folder__year" style="font-size: 0.8em; opacity: 0.7; margin-top: 0.2em;">'+movie.year+'</div>');
+                        item.find('.online-prestige-folder__title').after(info);
                     }
 
-                    html.on('hover:enter', function() {
-                        console.log('[ShowyPro] Selected:', element.title, 'postid:', element.postid);
-                        _this.loadSimilarMovie(element.postid);
+                    // Добавляем постер если есть
+                    if(movie.img) {
+                        var image = $('<img style="height: 100%; width: 100%; border-radius: 0.3em; object-fit: cover;" src="'+movie.img+'" />');
+                        image.on('error', function(){ $(this).remove(); });
+                        item.find('.online-prestige-folder__empty').empty().append(image).css({'padding':'0'});
+                    }
+
+                    item.on('hover:enter', function() {
+                        _this.loadSimilarMovie(movie.postid);
                     });
 
-                    html.on('hover:focus', function(e) {
+                    item.on('hover:focus', function(e) {
                         last = e.target;
                         scroll.update(e.target, true);
                     });
 
-                    scroll.append(html);
+                    scroll.append(item);
                 });
 
                 Lampa.Controller.enable('content');
