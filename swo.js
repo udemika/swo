@@ -38,10 +38,11 @@
             var attempts = 0;
             var images = [];
             var current_kinopoisk_id = null;
-            var current_postid = null; // ВАЖНО: Переменная для хранения ID выбранного фильма
+            var current_postid = null; 
             var current_season = null;
             var current_voice = null;
             var voice_params = []; 
+            var cache = {}; // Optimization: Cache storage
 
             var filter_translate = {
                 season: 'Сезон',
@@ -58,13 +59,13 @@
                 var proxy = PROXIES[currentProxyIdx];
                 var fullUrl = proxy + url;
 
-                console.log('[ShowyPro] Requesting:', fullUrl);
+                // console.log('[ShowyPro] Requesting:', fullUrl);
 
                 network.native(fullUrl, function(res) {
-                    console.log('[ShowyPro] Response received, length:', res.length);
+                    // console.log('[ShowyPro] Response received, length:', res.length);
 
                     if (res.length < 100) {
-                        console.log('[ShowyPro] Response too short, trying next proxy');
+                        // console.log('[ShowyPro] Response too short, trying next proxy');
                         attempts++;
                         if (attempts < PROXIES.length) {
                             currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
@@ -77,12 +78,12 @@
                     onSuccess(res);
                 }, function(err) {
                     attempts++;
-                    console.log('[ShowyPro] Proxy failed, attempt:', attempts);
+                    // console.log('[ShowyPro] Proxy failed, attempt:', attempts);
                     if (attempts < PROXIES.length) {
                         currentProxyIdx = (currentProxyIdx + 1) % PROXIES.length;
                         _this.requestWithProxy(url, onSuccess, onError);
                     } else {
-                        console.log('[ShowyPro] All proxies failed');
+                        // console.log('[ShowyPro] All proxies failed');
                         attempts = 0;
                         onError(err);
                     }
@@ -92,8 +93,7 @@
             this.initialize = function() {
                 var _this = this;
 
-                console.log('[ShowyPro] Initialize');
-                console.log('[ShowyPro] Movie object:', object.movie);
+                // console.log('[ShowyPro] Initialize');
 
                 filter.onBack = function() {
                     _this.start();
@@ -109,7 +109,7 @@
                             _this.loadSeason(current_season);
                         } else if (a.stype == 'voice') {
                             current_voice = b.index;
-                            console.log('[ShowyPro] Voice selected index:', current_voice, 'param t:', voice_params[current_voice]);
+                            // console.log('[ShowyPro] Voice selected index:', current_voice, 'param t:', voice_params[current_voice]);
                             _this.loadVoice(voice_params[current_voice]);
                         }
 
@@ -125,7 +125,6 @@
 
                 Lampa.Controller.enable('content');
 
-                // Сохраняем ID на всякий случай, но запрос делаем по названию
                 if (object.movie.kinopoisk_id || object.movie.kp_id) {
                     current_kinopoisk_id = object.movie.kinopoisk_id || object.movie.kp_id;
                 }
@@ -142,7 +141,7 @@
 
                 url = sign(url);
 
-                console.log('[ShowyPro] Initial Request URL (Title Only):', url);
+                // console.log('[ShowyPro] Initial Request URL (Title Only):', url);
 
                 _this.requestWithProxy(url, function(html) {
                     _this.parseInitial(html);
@@ -153,7 +152,7 @@
 
             this.parseInitial = function(html) {
                 var _this = this;
-                console.log('[ShowyPro] parseInitial - parsing HTML');
+                // console.log('[ShowyPro] parseInitial - parsing HTML');
 
                 try {
                     var $dom = $('<div>' + html + '</div>');
@@ -166,12 +165,12 @@
                             try {
                                 var jsonData = JSON.parse(dataJson);
                                 if (jsonData.similar === true) {
-                                    console.log('[ShowyPro] Detected similar movies');
+                                    // console.log('[ShowyPro] Detected similar movies');
                                     _this.parseSimilarMovies(html);
                                     return;
                                 }
                             } catch(e) {
-                                console.log('[ShowyPro] JSON parse error:', e);
+                                // console.log('[ShowyPro] JSON parse error:', e);
                             }
                         }
                     }
@@ -190,7 +189,7 @@
                         });
                     });
 
-                    console.log('[ShowyPro] Seasons found:', seasons.length);
+                    // console.log('[ShowyPro] Seasons found:', seasons.length);
 
                     if (seasons.length > 0) {
                         filter_find.season = seasons;
@@ -202,14 +201,14 @@
                         _this.parseContent(html);
                     }
                 } catch(e) {
-                    console.log('[ShowyPro] Parse error:', e);
+                    // console.log('[ShowyPro] Parse error:', e);
                     _this.empty('Ошибка парсинга');
                 }
             };
 
             this.parseSimilarMovies = function(html) {
                 var _this = this;
-                console.log('[ShowyPro] parseSimilarMovies');
+                // console.log('[ShowyPro] parseSimilarMovies');
 
                 try {
                     var $dom = $('<div>' + html + '</div>');
@@ -239,7 +238,7 @@
                         }
                     });
 
-                    console.log('[ShowyPro] Similar movies:', movies.length);
+                    // console.log('[ShowyPro] Similar movies:', movies.length);
 
                     if (movies.length > 0) {
                         _this.showSimilarMoviesList(movies);
@@ -247,14 +246,14 @@
                         _this.empty('Похожие фильмы не найдены');
                     }
                 } catch(e) {
-                    console.log('[ShowyPro] Parse similar error:', e);
+                    // console.log('[ShowyPro] Parse similar error:', e);
                     _this.empty('Ошибка парсинга');
                 }
             };
 
             this.showSimilarMoviesList = function(movies) {
                 var _this = this;
-                console.log('[ShowyPro] showSimilarMoviesList');
+                // console.log('[ShowyPro] showSimilarMoviesList');
 
                 scroll.clear();
 
@@ -294,7 +293,8 @@
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
 
-                current_postid = postid; // ЗАПОМИНАЕМ POSTID
+                current_postid = postid;
+                cache = {}; // Reset cache when switching movie
 
                 var url = 'http://' + BASE_DOMAIN + '?rjson=False&postid=' + postid;
 
@@ -306,17 +306,17 @@
 
                 url = sign(url);
 
-                console.log('[ShowyPro] Loading similar movie (postid):', url);
+                // console.log('[ShowyPro] Loading similar movie (postid):', url);
 
                 this.requestWithProxy(url, function(html) {
                     var $dom = $('<div>' + html + '</div>');
                     var $seasons = $dom.find('.videos__season-title');
 
                     if ($seasons.length > 0) {
-                        console.log('[ShowyPro] Similar movie has seasons');
+                        // console.log('[ShowyPro] Similar movie has seasons');
                         _this.parseInitial(html);
                     } else {
-                        console.log('[ShowyPro] Similar movie - direct content');
+                        // console.log('[ShowyPro] Similar movie - direct content');
                         _this.parseContent(html);
                     }
                 }, function() {
@@ -326,12 +326,20 @@
 
             this.loadSeason = function(seasonNum) {
                 var _this = this;
+                var cacheKey = 's_' + seasonNum;
+
+                // Check Cache
+                if (cache[cacheKey]) {
+                    // console.log('[ShowyPro] Loading season from cache:', seasonNum);
+                    _this.parseContent(cache[cacheKey]);
+                    return;
+                }
+
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
 
                 var url = 'http://' + BASE_DOMAIN;
 
-                // ИСПОЛЬЗУЕМ POSTID ЕСЛИ ЕСТЬ
                 if (current_postid) {
                      url += '?rjson=False&postid=' + current_postid;
                      url = Lampa.Utils.addUrlComponent(url, 'original_title=' + (object.movie.original_title ? encodeURIComponent(object.movie.original_title) : ''));
@@ -346,10 +354,11 @@
                 url = Lampa.Utils.addUrlComponent(url, 's=' + seasonNum);
                 url = sign(url);
 
-                console.log('[ShowyPro] Loading season:', seasonNum);
-                console.log('[ShowyPro] Request URL:', url);
+                // console.log('[ShowyPro] Loading season:', seasonNum);
+                // console.log('[ShowyPro] Request URL:', url);
 
                 this.requestWithProxy(url, function(html) {
+                    cache[cacheKey] = html; // Save to cache
                     _this.parseContent(html);
                 }, function() {
                     _this.empty('Ошибка загрузки сезона');
@@ -358,12 +367,20 @@
 
             this.loadVoice = function(voiceParam) {
                 var _this = this;
+                var cacheKey = 'v_' + voiceParam + '_s_' + (current_season || 0);
+
+                // Check Cache
+                if (cache[cacheKey]) {
+                    // console.log('[ShowyPro] Loading voice from cache:', voiceParam);
+                    _this.parseContent(cache[cacheKey], true);
+                    return;
+                }
+
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
 
                 var url = 'http://' + BASE_DOMAIN;
 
-                // ИСПОЛЬЗУЕМ POSTID ЕСЛИ ЕСТЬ
                 if (current_postid) {
                      url += '?rjson=False&postid=' + current_postid;
                      url = Lampa.Utils.addUrlComponent(url, 'original_title=' + (object.movie.original_title ? encodeURIComponent(object.movie.original_title) : ''));
@@ -381,10 +398,11 @@
                 url = Lampa.Utils.addUrlComponent(url, 't=' + voiceParam);
                 url = sign(url);
 
-                console.log('[ShowyPro] Loading voice with t:', voiceParam);
-                console.log('[ShowyPro] Request URL:', url);
+                // console.log('[ShowyPro] Loading voice with t:', voiceParam);
+                // console.log('[ShowyPro] Request URL:', url);
 
                 this.requestWithProxy(url, function(html) {
+                    cache[cacheKey] = html; // Save to cache
                     _this.parseContent(html, true);
                 }, function() {
                     _this.empty('Ошибка загрузки озвучки');
@@ -393,7 +411,7 @@
 
             this.parseContent = function(html, keepVoices) {
                 var _this = this;
-                console.log('[ShowyPro] parseContent - parsing episodes and voices');
+                // console.log('[ShowyPro] parseContent - parsing episodes and voices');
 
                 try {
                     var $dom = $('<div>' + html + '</div>');
@@ -421,7 +439,7 @@
                             }
                         });
 
-                        console.log('[ShowyPro] Voices found:', voices.length);
+                        // console.log('[ShowyPro] Voices found:', voices.length);
 
                         if (voices.length > 0) {
                             filter_find.voice = voices;
@@ -454,11 +472,11 @@
                                 });
                             }
                         } catch(e) {
-                            console.log('[ShowyPro] Episode parse error:', e);
+                            // console.log('[ShowyPro] Episode parse error:', e);
                         }
                     });
 
-                    console.log('[ShowyPro] Episodes found:', episodes.length);
+                    // console.log('[ShowyPro] Episodes found:', episodes.length);
 
                     if (episodes.length > 0) {
                         _this.updateFilterMenu();
@@ -467,7 +485,7 @@
                         _this.empty('Серии не найдены');
                     }
                 } catch(e) {
-                    console.log('[ShowyPro] Parse content error:', e);
+                    // console.log('[ShowyPro] Parse content error:', e);
                     _this.empty('Ошибка парсинга контента');
                 }
             };
@@ -543,7 +561,7 @@
                     scroll.append(html);
                 });
 
-                console.log('[ShowyPro] Episodes displayed:', videos.length);
+                // console.log('[ShowyPro] Episodes displayed:', videos.length);
                 Lampa.Controller.enable('content');
             };
 
@@ -589,16 +607,19 @@
             };
 
             this.clearImages = function() {
-                images.forEach(function(img) {
-                    img.onerror = function() {};
-                    img.onload = function() {};
-                    img.src = '';
-                });
+                if (images) {
+                    images.forEach(function(img) {
+                        img.onerror = null;
+                        img.onload = null;
+                        img.src = '';
+                        if (img.parentNode) img.parentNode.removeChild(img);
+                    });
+                }
                 images = [];
             };
 
             this.create = function() {
-                console.log('[ShowyPro] create()');
+                // console.log('[ShowyPro] create()');
                 this.initialize();
                 return this.render();
             };
@@ -649,6 +670,16 @@
                 this.clearImages();
                 files.destroy();
                 scroll.destroy();
+
+                // Memory Cleanup
+                network = null;
+                files = null;
+                scroll = null;
+                filter = null;
+                object = null;
+                cache = null;
+                filter_find = null;
+                voice_params = null;
             };
         }
 
@@ -683,7 +714,7 @@
             }
         });
 
-        console.log('[ShowyPro] Plugin v9.1 loaded - Full URL Fix');
+        console.log('[ShowyPro] Plugin v9.2 loaded - Optimized Memory');
     }
 
     if (window.appready) startPlugin();
