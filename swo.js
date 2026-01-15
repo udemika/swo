@@ -38,6 +38,7 @@
             var attempts = 0;
             var images = [];
             var current_kinopoisk_id = null;
+            var current_postid = null;
             var current_season = null;
             var current_voice = null;
             var voice_params = []; // Массив параметров t для озвучек
@@ -262,13 +263,11 @@
                         title: movie.title
                     });
 
-                    // Добавляем год
                     if(movie.year) {
                         var info = $('<div class="online-prestige-folder__year" style="font-size: 0.8em; opacity: 0.7; margin-top: 0.2em;">'+movie.year+'</div>');
                         item.find('.online-prestige-folder__title').after(info);
                     }
 
-                    // Добавляем постер если есть
                     if(movie.img) {
                         var image = $('<img style="height: 100%; width: 100%; border-radius: 0.3em; object-fit: cover;" src="'+movie.img+'" />');
                         image.on('error', function(){ $(this).remove(); });
@@ -295,18 +294,19 @@
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
 
-                // Формируем URL с правильной кодировкой
-                var url = 'http://' + BASE_DOMAIN + '?postid=' + postid;
-                url = Lampa.Utils.addUrlComponent(url, 'kinopoisk_id=' + current_kinopoisk_id);
+                current_postid = postid;
+
+                var url = 'http://' + BASE_DOMAIN + '?rjson=False&postid=' + postid;
 
                 if (object.movie.title) {
                     url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
                 }
 
-                // ДОБАВЛЯЕМ uid и showy_token через sign()
+                url = Lampa.Utils.addUrlComponent(url, 'original_title=' + (object.movie.original_title ? encodeURIComponent(object.movie.original_title) : ''));
+
                 url = sign(url);
 
-                console.log('[ShowyPro] Loading similar movie:', url);
+                console.log('[ShowyPro] Loading similar movie (postid):', url);
 
                 this.requestWithProxy(url, function(html) {
                     var $dom = $('<div>' + html + '</div>');
