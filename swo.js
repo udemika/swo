@@ -38,10 +38,10 @@
             var attempts = 0;
             var images = [];
             var current_kinopoisk_id = null;
-            var current_postid = null;
+            var current_postid = null; // ВАЖНО: Переменная для хранения ID выбранного фильма
             var current_season = null;
             var current_voice = null;
-            var voice_params = []; // Массив параметров t для озвучек
+            var voice_params = []; 
             
             var filter_translate = {
                 season: 'Сезон',
@@ -110,7 +110,6 @@
                         } else if (a.stype == 'voice') {
                             current_voice = b.index;
                             console.log('[ShowyPro] Voice selected index:', current_voice, 'param t:', voice_params[current_voice]);
-                            // Делаем новый запрос с выбранной озвучкой используя параметр t
                             _this.loadVoice(voice_params[current_voice]);
                         }
                         
@@ -156,7 +155,6 @@
                 try {
                     var $dom = $('<div>' + html + '</div>');
 
-                    // Проверяем, это похожие фильмы или сезоны
                     var $firstItem = $dom.find('.videos__item.videos__season').first();
 
                     if ($firstItem.length > 0) {
@@ -175,7 +173,6 @@
                         }
                     }
 
-                    // Обычная обработка сезонов
                     var $seasons = $dom.find('.videos__season-title');
                     var seasons = [];
 
@@ -255,19 +252,19 @@
             this.showSimilarMoviesList = function(movies) {
                 var _this = this;
                 console.log('[ShowyPro] showSimilarMoviesList');
-
+                
                 scroll.clear();
 
                 movies.forEach(function(movie){
                     var item = Lampa.Template.get('lampac_prestige_folder', {
                         title: movie.title
                     });
-
+                    
                     if(movie.year) {
                         var info = $('<div class="online-prestige-folder__year" style="font-size: 0.8em; opacity: 0.7; margin-top: 0.2em;">'+movie.year+'</div>');
                         item.find('.online-prestige-folder__title').after(info);
                     }
-
+                    
                     if(movie.img) {
                         var image = $('<img style="height: 100%; width: 100%; border-radius: 0.3em; object-fit: cover;" src="'+movie.img+'" />');
                         image.on('error', function(){ $(this).remove(); });
@@ -277,12 +274,12 @@
                     item.on('hover:enter', function() {
                         _this.loadSimilarMovie(movie.postid);
                     });
-
+                    
                     item.on('hover:focus', function(e) {
                         last = e.target;
                         scroll.update(e.target, true);
                     });
-
+                    
                     scroll.append(item);
                 });
 
@@ -293,15 +290,15 @@
                 var _this = this;
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
-
-                current_postid = postid;
+                
+                current_postid = postid; // ЗАПОМИНАЕМ POSTID
 
                 var url = 'http://' + BASE_DOMAIN + '?rjson=False&postid=' + postid;
 
                 if (object.movie.title) {
                     url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
                 }
-
+                
                 url = Lampa.Utils.addUrlComponent(url, 'original_title=' + (object.movie.original_title ? encodeURIComponent(object.movie.original_title) : ''));
 
                 url = sign(url);
@@ -329,7 +326,15 @@
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
                 
-                var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
+                var url = 'http://' + BASE_DOMAIN;
+                
+                // ИСПОЛЬЗУЕМ POSTID ЕСЛИ ЕСТЬ
+                if (current_postid) {
+                     url += '?rjson=False&postid=' + current_postid;
+                     url = Lampa.Utils.addUrlComponent(url, 'original_title=' + (object.movie.original_title ? encodeURIComponent(object.movie.original_title) : ''));
+                } else {
+                     url += '?kinopoisk_id=' + current_kinopoisk_id;
+                }
                 
                 if (object.movie.title) {
                     url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
@@ -353,8 +358,15 @@
                 scroll.clear();
                 scroll.body().append(Lampa.Template.get('lampac_content_loading'));
                 
-                // Используем параметр t из кнопки озвучки
-                var url = 'http://' + BASE_DOMAIN + '?kinopoisk_id=' + current_kinopoisk_id;
+                var url = 'http://' + BASE_DOMAIN;
+
+                // ИСПОЛЬЗУЕМ POSTID ЕСЛИ ЕСТЬ
+                if (current_postid) {
+                     url += '?rjson=False&postid=' + current_postid;
+                     url = Lampa.Utils.addUrlComponent(url, 'original_title=' + (object.movie.original_title ? encodeURIComponent(object.movie.original_title) : ''));
+                } else {
+                     url += '?kinopoisk_id=' + current_kinopoisk_id;
+                }
                 
                 if (object.movie.title) {
                     url = Lampa.Utils.addUrlComponent(url, 'title=' + encodeURIComponent(object.movie.title).replace(/%20/g, '+'));
@@ -383,7 +395,6 @@
                 try {
                     var $dom = $('<div>' + html + '</div>');
                     
-                    // Парсим озвучки только при первой загрузке
                     if (!keepVoices) {
                         var $voiceButtons = $dom.find('.videos__button');
                         var voices = [];
@@ -398,23 +409,16 @@
                                 try {
                                     var jsonData = JSON.parse(dataJson);
                                     var url = jsonData.url || '';
-                                    
-                                    // Извлекаем параметр t из URL
                                     var tMatch = url.match(/[?&]t=(\d+)/);
                                     var tParam = tMatch ? parseInt(tMatch[1]) : voices.length;
                                     
                                     voices.push({ title: title });
                                     voice_params.push(tParam);
-                                    
-                                    console.log('[ShowyPro] Voice:', title, 't=' + tParam);
-                                } catch(e) {
-                                    console.log('[ShowyPro] Voice button parse error:', e);
-                                }
+                                } catch(e) {}
                             }
                         });
 
                         console.log('[ShowyPro] Voices found:', voices.length);
-                        console.log('[ShowyPro] Voice params:', voice_params);
                         
                         if (voices.length > 0) {
                             filter_find.voice = voices;
@@ -422,7 +426,6 @@
                         }
                     }
                     
-                    // Парсим эпизоды
                     var $episodes = $dom.find('.videos__item.videos__movie');
                     var episodes = [];
                     
@@ -677,7 +680,7 @@
             }
         });
 
-        console.log('[ShowyPro] Plugin v9.0 loaded - Fixed voice parameter (t instead of p)');
+        console.log('[ShowyPro] Plugin v9.1 loaded - Full URL Fix');
     }
 
     if (window.appready) startPlugin();
@@ -687,4 +690,3 @@
         });
     }
 })();
-
