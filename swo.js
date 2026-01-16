@@ -204,14 +204,26 @@
                                     var postidMatch = jsonData.url.match(/postid=(\d+)/);
                                     var postid = postidMatch ? postidMatch[1] : null;
                                     
-                                    var imgUrl = jsonData.img || jsonData.image || '';
-                                    
-                                    // Очистка URL от прокси
-                                    if (imgUrl.indexOf('proxyimg') > -1) {
-                                        // Ищем начало реального URL (http или https)
-                                        var httpIndex = imgUrl.lastIndexOf('http');
-                                        if (httpIndex > 0) {
-                                            imgUrl = imgUrl.substring(httpIndex);
+                                    // ПРИОРИТЕТ 1: Формируем ссылку по Kinopoisk ID
+                                    var imgUrl = '';
+                                    var kpId = jsonData.kinopoisk_id || jsonData.kp_id;
+
+                                    if (kpId) {
+                                        imgUrl = 'https://st.kp.yandex.net/images/film_iphone/iphone360_' + kpId + '.jpg';
+                                    } else {
+                                        // ПРИОРИТЕТ 2: Пробуем вытащить оригинал из прокси-ссылки
+                                        var rawImg = jsonData.img || jsonData.image || '';
+                                        if (rawImg) {
+                                            if (rawImg.indexOf('proxyimg') > -1) {
+                                                var parts = rawImg.split('/http');
+                                                if (parts.length > 1) {
+                                                    imgUrl = 'http' + parts[1];
+                                                } else {
+                                                    imgUrl = rawImg; // Оставляем как есть, если не удалось распарсить
+                                                }
+                                            } else {
+                                                imgUrl = rawImg;
+                                            }
                                         }
                                     }
 
@@ -684,7 +696,7 @@
             }
         });
 
-        console.log('[ShowyPro] Plugin v9.6 loaded - Proxy URL Stripper');
+        console.log('[ShowyPro] Plugin v9.7 loaded - KP Images Preferred');
     }
 
     if (window.appready) startPlugin();
