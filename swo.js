@@ -204,14 +204,15 @@
                                     var postidMatch = jsonData.url.match(/postid=(\d+)/);
                                     var postid = postidMatch ? postidMatch[1] : null;
                                     
-                                    // ПРИОРИТЕТ 1: Формируем ссылку по Kinopoisk ID
+                                    // РАСШИРЕННЫЙ ПОИСК ID И КАРТИНОК
                                     var imgUrl = '';
-                                    var kpId = jsonData.kinopoisk_id || jsonData.kp_id;
+                                    var kpId = jsonData.kinopoisk_id || jsonData.kp_id || jsonData.kpId || jsonData.filmId;
 
-                                    if (kpId) {
+                                    if (kpId && kpId !== '0' && kpId !== 0) {
+                                        // 1. Приоритет: Стабильный постер с Кинопоиска
                                         imgUrl = 'https://st.kp.yandex.net/images/film_iphone/iphone360_' + kpId + '.jpg';
                                     } else {
-                                        // ПРИОРИТЕТ 2: Пробуем вытащить оригинал из прокси-ссылки
+                                        // 2. Фолбэк: Пробуем найти реальный URL внутри прокси-ссылки
                                         var rawImg = jsonData.img || jsonData.image || '';
                                         if (rawImg) {
                                             if (rawImg.indexOf('proxyimg') > -1) {
@@ -219,7 +220,9 @@
                                                 if (parts.length > 1) {
                                                     imgUrl = 'http' + parts[1];
                                                 } else {
-                                                    imgUrl = rawImg; // Оставляем как есть, если не удалось распарсить
+                                                    // Если не удалось раскодировать, оставляем как есть, 
+                                                    // но скорее всего получим 404, который обработаем в showSimilarMoviesList
+                                                    imgUrl = rawImg; 
                                                 }
                                             } else {
                                                 imgUrl = rawImg;
@@ -257,17 +260,27 @@
                     
                     var img_cont = $('<div style="width: 5em; height: 7.5em; margin-right: 1.2em; flex-shrink: 0; background-color: rgba(255,255,255,0.05); border-radius: 0.3em; overflow: hidden; position: relative;"></div>');
                     
+                    // Функция создания заглушки
+                    var createPlaceholder = function() {
+                        return $('<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; opacity: 0.3; background: #333;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>');
+                    };
+
                     if(movie.img) {
-                        var img = $('<img style="width: 100%; height: 100%; object-fit: cover;" src="'+movie.img+'" />');
-                        img.on('error', function(){ 
-                            $(this).remove(); 
-                            var no_img = $('<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; opacity: 0.3;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>');
-                            img_cont.append(no_img);
+                        var img = $('<img style="width: 100%; height: 100%; object-fit: cover;" />');
+                        
+                        img.on('load', function() {
+                            $(this).css('opacity', 1);
                         });
+
+                        img.on('error', function() { 
+                            $(this).remove(); 
+                            img_cont.empty().append(createPlaceholder());
+                        });
+
+                        img.attr('src', movie.img);
                         img_cont.append(img);
                     } else {
-                         var no_img = $('<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; opacity: 0.3;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>');
-                         img_cont.append(no_img);
+                         img_cont.append(createPlaceholder());
                     }
                     
                     var info = $('<div style="flex-grow: 1;"></div>');
@@ -696,7 +709,7 @@
             }
         });
 
-        console.log('[ShowyPro] Plugin v9.7 loaded - KP Images Preferred');
+        console.log('[ShowyPro] Plugin v9.8 loaded - Enhanced Image Fallback');
     }
 
     if (window.appready) startPlugin();
