@@ -203,23 +203,12 @@
                                 if (jsonData.similar === true && jsonData.url) {
                                     var postidMatch = jsonData.url.match(/postid=(\d+)/);
                                     var postid = postidMatch ? postidMatch[1] : null;
-                                    
-                                    // Пытаемся получить чистую ссылку на картинку
-                                    var imgUrl = jsonData.img || jsonData.image || '';
-                                    if (imgUrl.indexOf('proxyimg') > -1) {
-                                        // Если это прокси-ссылка, попробуем вырезать оригинал если он там есть
-                                        // Обычно формат proxyimg:width:height/URL
-                                        var parts = imgUrl.split('/http');
-                                        if (parts.length > 1) {
-                                            imgUrl = 'http' + parts[1];
-                                        }
-                                    }
 
                                     movies.push({
                                         title: title,
                                         postid: postid,
                                         year: jsonData.year || '',
-                                        img: imgUrl
+                                        img: jsonData.img || jsonData.image || ''
                                     });
                                 }
                             } catch(e) {}
@@ -241,23 +230,24 @@
                 scroll.clear();
 
                 movies.forEach(function(movie){
+                    // Создаем контейнер карточки вручную для полного контроля
                     var item = $('<div class="online-prestige selector" style="padding: 1em; display: flex; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05);"></div>');
                     
+                    // Контейнер картинки
                     var img_cont = $('<div style="width: 5em; height: 7.5em; margin-right: 1.2em; flex-shrink: 0; background-color: rgba(255,255,255,0.05); border-radius: 0.3em; overflow: hidden; position: relative;"></div>');
                     
+                    // Добавляем картинку если есть
                     if(movie.img) {
-                        // Используем оригинальный URL без прокси если возможно, или как есть
                         var img = $('<img style="width: 100%; height: 100%; object-fit: cover;" src="'+movie.img+'" />');
-                        img.on('error', function(){ 
-                            $(this).remove(); 
-                            // Можно добавить заглушку при ошибке загрузки
-                        });
+                        img.on('error', function(){ $(this).remove(); });
                         img_cont.append(img);
                     } else {
+                        // Заглушка если картинки нет
                          var no_img = $('<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; opacity: 0.3;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>');
                          img_cont.append(no_img);
                     }
                     
+                    // Контейнер информации
                     var info = $('<div style="flex-grow: 1;"></div>');
                     var title = $('<div style="font-size: 1.2em; font-weight: 500; margin-bottom: 0.4em; color: white;">'+movie.title+'</div>');
                     info.append(title);
@@ -684,7 +674,7 @@
             }
         });
 
-        console.log('[ShowyPro] Plugin v9.4 loaded - Images Fixed');
+        console.log('[ShowyPro] Plugin v9.3 loaded - UI Fixed');
     }
 
     if (window.appready) startPlugin();
