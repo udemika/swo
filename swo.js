@@ -8,7 +8,7 @@
         var WORKING_UID = 'i8nqb9vw';
         var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
         var BASE_DOMAIN = 'smotretk.com/lite/fxapi';
-        
+
         var PROXIES = [
             'https://cors.byskaz.ru/',
             'http://85.198.110.239:8975/',
@@ -34,7 +34,10 @@
 
         function component(object) {
             var network = new Network();
-            var scroll = new Lampa.Scroll({mask: true, over: true});
+            var scroll = new Lampa.Scroll({
+                mask: true,
+                over: true
+            });
             var files = new Lampa.Explorer(object);
             var filter = new Lampa.Filter(object);
 
@@ -87,7 +90,9 @@
                         attempts = 0;
                         onError(err);
                     }
-                }, false, {dataType: 'text'});
+                }, false, {
+                    dataType: 'text'
+                });
             };
 
             this.initialize = function() {
@@ -159,8 +164,8 @@
                         };
 
                         if (seasons.filter(function(s) {
-                            return s.season == season.season;
-                        }).length == 0) {
+                                return s.season == season.season;
+                            }).length == 0) {
                             seasons.push(season);
                         }
                     });
@@ -211,8 +216,8 @@
                         };
 
                         if (voices.filter(function(v) {
-                            return v.url == voice.url;
-                        }).length == 0) {
+                                return v.url == voice.url;
+                            }).length == 0) {
                             voices.push(voice);
                         }
                     });
