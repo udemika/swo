@@ -7,7 +7,7 @@
 
         var WORKING_UID = 'i8nqb9vw';
         var WORKING_TOKEN = 'f8377057-90eb-4d76-93c9-7605952a096l';
-        var BASE_DOMAIN = 'smotretk.com/lite/fxapi';
+        var BASE_DOMAIN = 'smotretk.com/lite/fxapi';  // ✅ ЗАМЕНЕНО: showypro.com → smotretk.com
 
         var PROXIES = [
             'https://cors.byskaz.ru/',
@@ -408,32 +408,42 @@
             };
         }
 
-        // Регистрация плагина с кнопкой на странице фильма/сериала
-        var manifest = {
+        Lampa.Manifest.plugins = {
             type: 'video',
             name: 'ShowyPro',
-            description: 'Плагин для просмотра контента',
-            component: 'showypro',
-            onContextMenu: function(object) {
-                return {
-                    name: 'Смотреть на ShowyPro',
-                    description: 'ShowyPro'
-                };
-            },
-            onContextLauch: function(object) {
-                Lampa.Component.add('showypro', component);
-                Lampa.Activity.push({
-                    url: '',
-                    title: 'ShowyPro',
-                    component: 'showypro',
-                    movie: object,
-                    page: 1
-                });
-            }
+            version: '1.0.0',
+            component: 'showypro'
         };
 
-        Lampa.Manifest.plugins = manifest;
         Lampa.Component.add('showypro', component);
+
+        // ✅ ПРАВИЛЬНЫЙ СПОСОБ ДОБАВЛЕНИЯ КНОПКИ НА КАРТОЧКУ ФИЛЬМА
+        Lampa.Listener.follow('full', function(data) {
+            if (data.object && data.object.movie) {
+                // Ищем контейнер с кнопками
+                var $buttons = data.rendering.find('.full__buttons');
+                
+                if ($buttons.length) {
+                    // Создаем кнопку ShowyPro
+                    var $btn = $('<div class="full__button selector">' +
+                        '<div class="full__button-text">ShowyPro</div>' +
+                        '</div>');
+
+                    $btn.on('hover:enter', function() {
+                        // Открываем плагин ShowyPro
+                        Lampa.Activity.push({
+                            url: '',
+                            title: 'ShowyPro',
+                            component: 'showypro',
+                            movie: data.object.movie,
+                            page: 1
+                        });
+                    });
+
+                    $buttons.append($btn);
+                }
+            }
+        });
     }
 
     if (!window.showypro_plugin_loaded) {
